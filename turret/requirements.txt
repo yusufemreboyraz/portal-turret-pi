@@ -1,0 +1,15 @@
+# Raspberry Pi 5 (Raspberry Pi OS Bookworm 64-bit) için.
+# picamera2 sistemde apt ile gelir (pip ile değil):
+#   sudo apt install -y python3-picamera2
+# Sanal ortam kullanıyorsan: python3 -m venv --system-site-packages venv
+
+pyyaml>=6.0
+ruamel.yaml>=0.18      # calibrate.py config yorumlarını korur (opsiyonel ama önerilir)
+pyserial>=3.5
+numpy>=1.24
+opencv-python>=4.8     # Pi'de alternatif: sudo apt install python3-opencv
+ultralytics>=8.3       # YOLO (NCNN export dahil); backend=mediapipe ise gerekmez
+pygame>=2.5            # ses; yoksa 'aplay' fallback kullanılır
+
+# Hafif tespit alternatifi (config: detection.backend=mediapipe):
+# mediapipe>=0.10

@@ -1,0 +1,61 @@
+# Portal Turret yapılandırması — tüm ayarlar tek yerde.
+# Açılar derece (0-180). Kalibrasyon değerleri calibrate.py tarafından doldurulur.
+
+serial:
+  port: /dev/ttyACM0      # Arduino Uno R4 (lsusb / ls /dev/ttyACM* ile kontrol et)
+  baud: 115200
+  command_hz: 30          # saniyede gönderilen komut sayısı
+  reconnect_delay_s: 2.0
+
+camera:
+  width: 640
+  height: 480
+  fps: 30
+  hflip: false            # kamera ters monteliyse true yap
+  vflip: false
+
+detection:
+  backend: yolo           # yolo | mediapipe
+  model: yolo11n.pt       # ultralytics; ilk çalıştırmada NCNN'e export edilir
+  use_ncnn: true          # Pi 5'te ~2x hız
+  conf: 0.45              # minimum güven
+  person_class_id: 0      # COCO 'person'
+  # En büyük (en yakın) insan hedef seçilir.
+
+servos:
+  # Mekanik limitler — montajda kendi turretine göre daralt.
+  pan:  { min: 10, max: 170, center: 90, invert: false }
+  tilt: { min: 40, max: 140, center: 90, invert: false }
+  eye_x: { min: 60, max: 120, center: 90, invert: false }
+  eye_y: { min: 60, max: 120, center: 90, invert: false }
+  eye_follow_gain: 0.35   # göz, pan/tilt sapmasını bu oranda taklit eder
+  laser_always_on: true
+
+smoothing:
+  max_step_deg: 4.0       # kare başına maksimum açı değişimi (titreme önler)
+  lowpass_alpha: 0.35     # 0..1, küçük = daha yumuşak/yavaş
+
+# Kamera pikselinden servo açısına doğrusal eşleme.
+# calibrate.py bunu yazar. Varsayılan: kabaca lineer, FOV ~ tüm aralık.
+calibration:
+  pan:  { px_min: 0,   px_max: 640, deg_at_px_min: 170, deg_at_px_max: 10 }
+  tilt: { px_min: 0,   px_max: 480, deg_at_px_min: 40,  deg_at_px_max: 140 }
+
+# Eski Turret.ini zamanlayıcı mantığı (ms).
+timers:
+  found_ms: 1000          # hedef onayı (TARGET_ACQUIRED -> TRACKING)
+  lost_ms: 1000           # hedef kaybı onayı
+  reacquire_ms: 500       # kayıptan sonra yeniden kilit penceresi
+  fire_cooldown_ms: 4000  # "Fire/Gotcha" sesi tekrar aralığı
+  lock_tolerance_px: 40   # hedef merkeze bu kadar yakınsa "kilit"
+
+sounds:
+  enabled: true
+  base_dir: sounds
+  found:  [TargetFound/ISeeYou.wav, TargetFound/ThereYouAre.wav, TargetFound/Acquired.wav]
+  lock:   [TargetFound/Gotcha.wav, Fire.wav, Fire/FireShort.wav]
+  lost:   [TargetLost/AreYouStillThere.wav, TargetLost/TargetLost.wav]
+
+debug:
+  show_window: false      # masaüstünde tespit penceresi (Pi headless'te false)
+  print_fps: true
