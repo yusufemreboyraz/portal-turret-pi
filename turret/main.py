@@ -57,6 +57,9 @@ class Turret:
         d = cfg["detection"]
         self.detector = PersonDetector(d["backend"], d["model"], d["use_ncnn"],
                                        d["conf"], d["person_class_id"])
+        # Nişan noktası ofseti: kutu yüksekliğinin oranı kadar Y'de kaydırır.
+        # 0.0 = tam merkez, -0.2 = merkezden %20 yukarı (göğüs/baş bölgesi).
+        self.aim_y_offset = float(d.get("aim_y_offset_ratio", -0.2))
         self.ctrl = Controller(cfg)
         self.link = SerialLink(cfg["serial"]["port"], cfg["serial"]["baud"],
                                cfg["serial"]["command_hz"],
@@ -132,7 +135,9 @@ class Turret:
 
             # ---- aktüasyon ----
             if has_target and self.state in (ACQUIRED, TRACKING):
-                px = (target.cx, target.cy)
+                # Merkezden yukarıya doğru ofset (kutu yüksekliği oranı).
+                aim_y = target.cy + int(round(self.aim_y_offset * target.h))
+                px = (target.cx, aim_y)
             else:
                 px = None
             cmd = self.ctrl.update(px)
@@ -155,6 +160,10 @@ class Turret:
                         (target.cx - target.w // 2, target.cy - target.h // 2),
                         (target.cx + target.w // 2, target.cy + target.h // 2),
                         (0, 0, 255), 2)
+                    # Nişan noktası (ofsetli) — sarı artı
+                    aim_y = target.cy + int(round(self.aim_y_offset * target.h))
+                    cv2.drawMarker(frame, (target.cx, aim_y), (0, 255, 255),
+                                   cv2.MARKER_CROSS, 18, 2)
                 cv2.putText(frame, self.state, (10, 25),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 cv2.imshow("turret", frame)
