@@ -2,7 +2,7 @@
 # Açılar derece (0-180). Kalibrasyon değerleri calibrate.py tarafından doldurulur.
 
 serial:
-  port: /dev/ttyACM0      # Arduino Uno R4 (lsusb / ls /dev/ttyACM* ile kontrol et)
+  port: /dev/cu.usbmodem3CDC754A49F02   # Mac. (Pi'de /dev/ttyACM0 olur)
   baud: 115200
   command_hz: 30          # saniyede gönderilen komut sayısı
   reconnect_delay_s: 2.0
@@ -26,8 +26,8 @@ servos:
   # Mekanik limitler — montajda kendi turretine göre daralt.
   pan:  { min: 10, max: 170, center: 90, invert: false }
   tilt: { min: 40, max: 140, center: 90, invert: false }
-  eye_x: { min: 60, max: 120, center: 90, invert: false }
-  eye_y: { min: 60, max: 120, center: 90, invert: false }
+  eye_x: { min: 65, max: 135, center: 100, invert: false }  # sol 65 - sağ 135
+  eye_y: { min: 110, max: 170, center: 140, invert: false } # yukarı 110 - aşağı 170
   eye_follow_gain: 0.35   # göz, pan/tilt sapmasını bu oranda taklit eder
   laser_always_on: true
 
@@ -57,5 +57,5 @@ sounds:
   lost:   [TargetLost/AreYouStillThere.wav, TargetLost/TargetLost.wav]
 
 debug:
-  show_window: false      # masaüstünde tespit penceresi (Pi headless'te false)
+  show_window: true       # Mac demosunda tespit penceresini gör (Pi headless'te false yap)
   print_fps: true

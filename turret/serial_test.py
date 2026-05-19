@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 
 import yaml
@@ -48,7 +49,26 @@ def main():
         time.sleep(0.5)
         print("gönderildi:", args)
     else:
+        # SÜREKLI mod: girilen değer arka planda ~20Hz tekrar gönderilir,
+        # böylece firmware failsafe'i servoyu geri yank'lamaz (stall/zorlanma yok).
         print("Format: pan tilt eyeX eyeY laser   (boş satır = çık)")
+        print("Girilen değer sen yenisini yazana kadar sürekli gönderilir.")
+        # cmd None iken HİÇBİR ŞEY gönderilmez -> firmware armed olmaz ->
+        # servolar serbest kalır. İlk değeri sen yazınca hareket başlar.
+        state = {"cmd": None, "run": True}
+
+        def pump():
+            while state["run"]:
+                c = state["cmd"]
+                if c is not None:
+                    link.send(c[0], c[1], c[2], c[3], bool(c[4]), force=True)
+                time.sleep(0.05)
+
+        th = threading.Thread(target=pump, daemon=True)
+        th.start()
+        print("Servolar şu an SERBEST (komut yok). İlk değeri yazınca "
+              "o açıya gider ve sen değiştirene kadar orada tutulur.")
+        print("Güvenli başlamak için makul bir değerle başla, küçük adımlarla ilerle.")
         while True:
             try:
                 line = input("> ").strip()
@@ -58,9 +78,15 @@ def main():
                 break
             p = line.split()
             if len(p) != 5:
-                print("5 değer gerekli")
+                print("5 değer gerekli (pan tilt eyeX eyeY laser)")
                 continue
-            link.send(*[int(v) for v in p[:4]], bool(int(p[4])), force=True)
+            try:
+                state["cmd"] = [int(p[0]), int(p[1]), int(p[2]),
+                                int(p[3]), int(p[4])]
+            except ValueError:
+                print("hepsi sayı olmalı")
+        state["run"] = False
+        th.join(timeout=1.0)
 
     link.close()
 

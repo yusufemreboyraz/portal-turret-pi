@@ -30,13 +30,20 @@ const unsigned long BAUD          = 115200;
 const unsigned long LOOP_MS       = 15;     // servo güncelleme periyodu
 const float         MAX_STEP_DEG  = 3.0;    // döngü başına max açı değişimi (slew)
 const unsigned long FAILSAFE_MS   = 500;    // bu süre komut gelmezse merkeze dön
-const int           CENTER        = 90;
+
+// Her servonun KENDİ güvenli merkezi. Açılışta ve komut kesilince
+// (failsafe) servolar buraya yumuşakça gelir. Göz değerleri elle ölçüldü:
+// eyeX 65(sol)-135(sağ), eyeY 110(yukarı)-170(aşağı).
+const int CEN_PAN  = 90;
+const int CEN_TILT = 90;
+const int CEN_EYEX = 100;  // sol65-sağ135 ortası
+const int CEN_EYEY = 140;  // yukarı110-aşağı170 ortası
 
 Servo sPan, sTilt, sEyeX, sEyeY;
 
 // Hedef ve mevcut açılar (float = pürüzsüz slew)
-float tgtPan = CENTER, tgtTilt = CENTER, tgtEyeX = CENTER, tgtEyeY = CENTER;
-float curPan = CENTER, curTilt = CENTER, curEyeX = CENTER, curEyeY = CENTER;
+float tgtPan = CEN_PAN, tgtTilt = CEN_TILT, tgtEyeX = CEN_EYEX, tgtEyeY = CEN_EYEY;
+float curPan = CEN_PAN, curTilt = CEN_TILT, curEyeX = CEN_EYEX, curEyeY = CEN_EYEY;
 int   laserState = 0;
 
 unsigned long lastCmdMs = 0;
@@ -57,6 +64,13 @@ float slew(float cur, float tgt) {
   if (d >  MAX_STEP_DEG) d =  MAX_STEP_DEG;
   if (d < -MAX_STEP_DEG) d = -MAX_STEP_DEG;
   return cur + d;
+}
+
+void attachAll() {
+  sPan.attach(PIN_PAN);
+  sTilt.attach(PIN_TILT);
+  sEyeX.attach(PIN_EYEX);
+  sEyeY.attach(PIN_EYEY);
 }
 
 void applyCommand(char *line) {
@@ -103,15 +117,17 @@ void setup() {
   pinMode(PIN_LASER, OUTPUT);
   digitalWrite(PIN_LASER, LOW);
 
-  sPan.attach(PIN_PAN);
-  sTilt.attach(PIN_TILT);
-  sEyeX.attach(PIN_EYEX);
-  sEyeY.attach(PIN_EYEY);
+  // Açılışta belirlenen GÜVENLİ merkeze al ve orada tut.
+  curPan = tgtPan = CEN_PAN;
+  curTilt = tgtTilt = CEN_TILT;
+  curEyeX = tgtEyeX = CEN_EYEX;
+  curEyeY = tgtEyeY = CEN_EYEY;
 
-  sPan.write(CENTER);
-  sTilt.write(CENTER);
-  sEyeX.write(CENTER);
-  sEyeY.write(CENTER);
+  attachAll();
+  sPan.write(CEN_PAN);
+  sTilt.write(CEN_TILT);
+  sEyeX.write(CEN_EYEX);
+  sEyeY.write(CEN_EYEY);
 
   lastCmdMs = millis();
 }
@@ -123,9 +139,11 @@ void loop() {
   if (now - lastLoopMs < LOOP_MS) return;
   lastLoopMs = now;
 
-  // Failsafe: Pi sustuysa güvenli merkeze dön, lazeri kapat.
+  // Failsafe: komut kesilirse belirlenen GÜVENLİ merkeze yumuşakça dön,
+  // lazeri kapat. (Merkezler ölçülerek doğrulandı, zorlama yok.)
   if (now - lastCmdMs > FAILSAFE_MS) {
-    tgtPan = tgtTilt = tgtEyeX = tgtEyeY = CENTER;
+    tgtPan = CEN_PAN; tgtTilt = CEN_TILT;
+    tgtEyeX = CEN_EYEX; tgtEyeY = CEN_EYEY;
     laserState = 0;
   }
 
