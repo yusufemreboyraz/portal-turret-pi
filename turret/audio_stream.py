@@ -49,21 +49,23 @@ const log = (m) => { const d=document.createElement('div');
   while (el.children.length>60) el.removeChild(el.lastChild); };
 let started = false;
 let queueAudio = [];
-document.getElementById('start').onclick = async () => {
-  try {
-    // Sessiz bir oynatma ile autoplay kilidini aç
-    const dummy = new Audio();
-    dummy.muted = true;
-    await dummy.play().catch(()=>{});
-    started = true;
-    document.getElementById('start').style.display='none';
-    status('Aktif. Olaylar bekleniyor.');
-    // Kuyrukta birikenleri çal
-    while (queueAudio.length) {
-      const f = queueAudio.shift();
-      new Audio('/sounds/' + encodeURI(f)).play().catch(e=>log('hata: '+e));
-    }
-  } catch (e) { log('başlatma hatası: '+e); }
+// Çok kısa sessiz wav (autoplay kilidini click içinde açmak için)
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+document.getElementById('start').onclick = () => {
+  started = true;
+  document.getElementById('start').style.display='none';
+  status('Aktif. Olaylar bekleniyor.');
+  // User-gesture bağlamında bir ses çal -> autoplay kilidi açılır.
+  const first = queueAudio.shift();
+  const src = first ? ('/sounds/' + encodeURI(first)) : SILENT_WAV;
+  const a = new Audio(src);
+  a.play().then(()=>log('autoplay kilidi açıldı'))
+          .catch(e=>log('başlatma: '+e));
+  // Kalan kuyruğu boşalt
+  while (queueAudio.length) {
+    const f = queueAudio.shift();
+    new Audio('/sounds/' + encodeURI(f)).play().catch(e=>log('hata: '+e));
+  }
 };
 const es = new EventSource('/events');
 es.onopen = () => status(started ? 'Aktif.' : 'Bağlandı — "Sesi Başlat"a bas.');
