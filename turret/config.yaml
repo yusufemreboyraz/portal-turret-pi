@@ -64,6 +64,6 @@ debug:
 
 streaming:
   enabled: true
-  client_ip: "100.119.249.57"  # İzleyeceğiniz bilgisayarın yerel IP adresi
+  client_ip: "192.168.123.21"  # İzleyeceğiniz bilgisayarın yerel IP adresi
   video_port: 5000
   audio_port: 5001
