@@ -24,7 +24,7 @@ detection:
 
 servos:
   # Mekanik limitler — montajda kendi turretine göre daralt.
-  pan:  { min: 10, max: 170, center: 90, invert: false }
+  pan:  { min: 70, max: 140, center: 105, invert: false }   # sol 70 - sağ 140 (ölçülen)
   tilt: { min: 40, max: 140, center: 90, invert: false }
   eye_x: { min: 55, max: 135, center: 95, invert: false }   # sol 55 - sağ 135
   eye_y: { min: 0, max: 70, center: 35, invert: false }     # yukarı 0 - aşağı 70
@@ -40,7 +40,7 @@ smoothing:
 # Kamera pikselinden servo açısına doğrusal eşleme.
 # calibrate.py bunu yazar. Varsayılan: kabaca lineer, FOV ~ tüm aralık.
 calibration:
-  pan:  { px_min: 0,   px_max: 640, deg_at_px_min: 170, deg_at_px_max: 10 }
+  pan:  { px_min: 0,   px_max: 640, deg_at_px_min: 140, deg_at_px_max: 70 }
   tilt: { px_min: 0,   px_max: 480, deg_at_px_min: 40,  deg_at_px_max: 140 }
 
 # Eski Turret.ini zamanlayıcı mantığı (ms).
