@@ -15,9 +15,12 @@ camera:
   vflip: false
 
 detection:
-  backend: yolo           # yolo | mediapipe
-  model: yolo11n.pt       # ultralytics; ilk çalıştırmada NCNN'e export edilir
-  use_ncnn: true          # Pi 5'te ~2x hız
+  # Mac geliştirme: backend=yolo (ultralytics + .pt) hızlı kurulum.
+  # Pi 5 üretim: backend=onnx + yolo11n.onnx ÖNERİLİR
+  #   -> ultralytics/torch GEREKMEZ; sadece onnxruntime+numpy+cv2.
+  backend: yolo           # yolo | onnx | mediapipe
+  model: yolo11n.pt       # yolo: .pt | onnx: .onnx (turret/ klasöründen veya tam yol)
+  use_ncnn: true          # sadece backend=yolo iken etkili (NCNN export)
   conf: 0.45              # minimum güven
   person_class_id: 0      # COCO 'person'
   # En büyük (en yakın) insan hedef seçilir.

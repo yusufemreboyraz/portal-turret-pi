@@ -8,8 +8,13 @@ ruamel.yaml>=0.18      # calibrate.py config yorumlarını korur (opsiyonel ama 
 pyserial>=3.5
 numpy>=1.24
 opencv-python>=4.8     # Pi'de alternatif: sudo apt install python3-opencv
-ultralytics>=8.3       # YOLO (NCNN export dahil); backend=mediapipe ise gerekmez
+ultralytics>=8.3       # backend=yolo için (Mac geliştirme). Pi'de GEREKMEZ.
 pygame>=2.5            # ses; yoksa 'aplay' fallback kullanılır
+
+# Pi 5 ÜRETİM (önerilen — ultralytics/torch'a gerek yok):
+#   pip install onnxruntime
+# config'de detection.backend: onnx, model: yolo11n.onnx yap.
+# onnxruntime>=1.18
 
 # Hafif tespit alternatifi (config: detection.backend=mediapipe):
 # mediapipe>=0.10
