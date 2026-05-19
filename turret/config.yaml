@@ -2,7 +2,7 @@
 # Açılar derece (0-180). Kalibrasyon değerleri calibrate.py tarafından doldurulur.
 
 serial:
-  port: /dev/cu.usbmodem3CDC754A49F02   # Mac. (Pi'de /dev/ttyACM0 olur)
+  port: /dev/ttyACM0   # Mac. (Pi'de /dev/ttyACM0 olur)
   baud: 115200
   command_hz: 30          # saniyede gönderilen komut sayısı
   reconnect_delay_s: 2.0
@@ -64,5 +64,5 @@ sounds:
   lost:   [TargetLost/AreYouStillThere.wav, TargetLost/TargetLost.wav]
 
 debug:
-  show_window: true       # Mac demosunda tespit penceresini gör (Pi headless'te false yap)
+  show_window: false       # Mac demosunda tespit penceresini gör (Pi headless'te false yap)
   print_fps: true
