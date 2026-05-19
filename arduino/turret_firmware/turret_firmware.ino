@@ -35,7 +35,7 @@ const unsigned long FAILSAFE_MS   = 500;    // bu süre komut gelmezse merkeze d
 // (failsafe) servolar buraya yumuşakça gelir. Göz değerleri elle ölçüldü:
 // eyeX 55(sol)-135(sağ), eyeY 0(yukarı)-70(aşağı).
 const int CEN_PAN  = 105;  // sol70-sağ140 ortası (ölçülen)
-const int CEN_TILT = 90;   // tilt teli koptu — sonra ölçülecek
+const int CEN_TILT = 85;   // yukarı30-aşağı140 ortası (ölçülen)
 const int CEN_EYEX = 95;   // sol55-sağ135 ortası
 const int CEN_EYEY = 35;   // yukarı0-aşağı70 ortası
 
@@ -44,7 +44,7 @@ const int CEN_EYEY = 35;   // yukarı0-aşağı70 ortası
 // Göz değerleri ölçüldü. Pan/Tilt GEÇİCİ tahmin — büyük servo testinden
 // sonra gerçek ölçümle güncellenecek.
 const int PAN_MIN  = 70,  PAN_MAX  = 140;   // ölçüldü
-const int TILT_MIN = 40,  TILT_MAX = 140;   // GEÇİCİ — tilt teli koptu, sonra
+const int TILT_MIN = 30,  TILT_MAX = 140;   // ölçüldü
 const int EYEX_MIN = 55,  EYEX_MAX = 135;
 const int EYEY_MIN = 0,   EYEY_MAX = 70;
 
