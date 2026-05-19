@@ -75,6 +75,19 @@ class SerialLink:
             self.close()
             return False
 
+    def send_raw(self, line: str) -> bool:
+        """Ham bir protokol satırı gönderir (örn. 'L,1'). \\n eklenir."""
+        if not self._ensure_open():
+            return False
+        if not line.endswith("\n"):
+            line += "\n"
+        try:
+            self._ser.write(line.encode("ascii"))
+            return True
+        except (serial.SerialException, OSError):
+            self.close()
+            return False
+
     def close(self):
         if self._ser is not None:
             try:

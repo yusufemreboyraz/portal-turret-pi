@@ -90,6 +90,9 @@ class Turret:
         print_fps = cfg["debug"]["print_fps"]
         if show:
             import cv2
+        # Otomatik modda güvenli kenar limitleri MUTLAKA açık olsun
+        # (serial_test raw bırakmış olabilir).
+        self.link.send_raw("L,1")
         frames = 0
         fps_t0 = time.monotonic()
 

@@ -26,8 +26,8 @@ servos:
   # Mekanik limitler — montajda kendi turretine göre daralt.
   pan:  { min: 10, max: 170, center: 90, invert: false }
   tilt: { min: 40, max: 140, center: 90, invert: false }
-  eye_x: { min: 65, max: 135, center: 100, invert: false }  # sol 65 - sağ 135
-  eye_y: { min: 110, max: 170, center: 140, invert: false } # yukarı 110 - aşağı 170
+  eye_x: { min: 55, max: 135, center: 95, invert: false }   # sol 55 - sağ 135
+  eye_y: { min: 0, max: 70, center: 35, invert: false }     # yukarı 0 - aşağı 70
   eye_follow_gain: 0.35   # (sadece eye_direct:false iken) göz pan/tilt'i taklit oranı
   eye_direct: true        # true: göz DOĞRUDAN hedef pikseline bakar (eye-only demo)
   laser_always_on: true

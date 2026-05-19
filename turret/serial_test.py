@@ -50,11 +50,14 @@ def main():
         print("gönderildi:", args)
     else:
         # SÜREKLI mod: girilen değer arka planda ~20Hz tekrar gönderilir,
-        # böylece firmware failsafe'i servoyu geri yank'lamaz (stall/zorlanma yok).
+        # böylece firmware failsafe'i merkeze geri çekmez (kararlı tutar).
+        # RAW mod: limitleri kapat (L,0) -> sınır bulurken kelepçe yok,
+        # sadece mutlak 0-180 koruması kalır.
+        link.send_raw("L,0")
         print("Format: pan tilt eyeX eyeY laser   (boş satır = çık)")
+        print(">>> RAW MOD: güvenli kenar limitleri KAPALI (sınır bulma için).")
+        print("    Servoyu fiziksel sınıra dayatma; ilk zorlanmada DUR.")
         print("Girilen değer sen yenisini yazana kadar sürekli gönderilir.")
-        # cmd None iken HİÇBİR ŞEY gönderilmez -> firmware armed olmaz ->
-        # servolar serbest kalır. İlk değeri sen yazınca hareket başlar.
         state = {"cmd": None, "run": True}
 
         def pump():
@@ -66,9 +69,10 @@ def main():
 
         th = threading.Thread(target=pump, daemon=True)
         th.start()
-        print("Servolar şu an SERBEST (komut yok). İlk değeri yazınca "
-              "o açıya gider ve sen değiştirene kadar orada tutulur.")
-        print("Güvenli başlamak için makul bir değerle başla, küçük adımlarla ilerle.")
+        print("İlk değeri yazınca servo o açıya gider, sen değiştirene "
+              "kadar orada tutulur. Makul bir değerle başla, küçük adımlarla git.")
+        print("Not: Arduino resetlenirse (USB çıkıp takılırsa) RAW mod sıfırlanır;"
+              " serial_test'i yeniden başlat.")
         while True:
             try:
                 line = input("> ").strip()

@@ -33,11 +33,20 @@ const unsigned long FAILSAFE_MS   = 500;    // bu süre komut gelmezse merkeze d
 
 // Her servonun KENDİ güvenli merkezi. Açılışta ve komut kesilince
 // (failsafe) servolar buraya yumuşakça gelir. Göz değerleri elle ölçüldü:
-// eyeX 65(sol)-135(sağ), eyeY 110(yukarı)-170(aşağı).
+// eyeX 55(sol)-135(sağ), eyeY 0(yukarı)-70(aşağı).
 const int CEN_PAN  = 90;
 const int CEN_TILT = 90;
-const int CEN_EYEX = 100;  // sol65-sağ135 ortası
-const int CEN_EYEY = 140;  // yukarı110-aşağı170 ortası
+const int CEN_EYEX = 95;   // sol55-sağ135 ortası
+const int CEN_EYEY = 35;   // yukarı0-aşağı70 ortası
+
+// GÜVENLİ KENAR LİMİTLERİ — firmware bu aralık DIŞINA asla çıkmaz.
+// (Ne gelirse gelsin servo zorlanmaz; çift güvenlik.)
+// Göz değerleri ölçüldü. Pan/Tilt GEÇİCİ tahmin — büyük servo testinden
+// sonra gerçek ölçümle güncellenecek.
+const int PAN_MIN  = 10,  PAN_MAX  = 170;
+const int TILT_MIN = 40,  TILT_MAX = 140;
+const int EYEX_MIN = 55,  EYEX_MAX = 135;
+const int EYEY_MIN = 0,   EYEY_MAX = 70;
 
 Servo sPan, sTilt, sEyeX, sEyeY;
 
@@ -46,16 +55,21 @@ float tgtPan = CEN_PAN, tgtTilt = CEN_TILT, tgtEyeX = CEN_EYEX, tgtEyeY = CEN_EY
 float curPan = CEN_PAN, curTilt = CEN_TILT, curEyeX = CEN_EYEX, curEyeY = CEN_EYEY;
 int   laserState = 0;
 
+// true: güvenli kenar limitleri uygulanır (normal/main.py).
+// false: ham mod, sadece mutlak 0-180 (serial_test ile sınır bulma).
+// "L,0" / "L,1" komutuyla değişir; varsayılan güvenli (true).
+bool  limitsOn = true;
+
 unsigned long lastCmdMs = 0;
 unsigned long lastLoopMs = 0;
 
 char  buf[48];
 uint8_t bufLen = 0;
 
-int clampAngle(int a) {
-  if (a < 0)   return 0;
-  if (a > 180) return 180;
-  return a;
+int clampRange(int v, int lo, int hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
 }
 
 // curr'i tgt'ye doğru en fazla MAX_STEP_DEG kadar yaklaştır.
@@ -74,9 +88,20 @@ void attachAll() {
 }
 
 void applyCommand(char *line) {
-  // Beklenen: T,pan,tilt,eyeX,eyeY,laser
+  // "L,<0|1>" -> limit modunu değiştir (0=ham, 1=güvenli)
+  if (line[0] == 'L') {
+    strtok(line, ",");
+    char *lv = strtok(NULL, ",");
+    if (lv) {
+      limitsOn = (atoi(lv) != 0);
+      Serial.println(limitsOn ? "LIM_ON" : "LIM_OFF");
+    }
+    return;
+  }
+
+  // "T,pan,tilt,eyeX,eyeY,laser"
   if (line[0] != 'T') return;
-  char *p = strtok(line, ",");          // "T"
+  strtok(line, ",");                    // "T"
   char *sp = strtok(NULL, ",");
   char *st = strtok(NULL, ",");
   char *sx = strtok(NULL, ",");
@@ -84,10 +109,16 @@ void applyCommand(char *line) {
   char *sl = strtok(NULL, ",");
   if (!sp || !st || !sx || !sy || !sl) return;
 
-  tgtPan  = clampAngle(atoi(sp));
-  tgtTilt = clampAngle(atoi(st));
-  tgtEyeX = clampAngle(atoi(sx));
-  tgtEyeY = clampAngle(atoi(sy));
+  // limitsOn ? güvenli kenarlar : sadece mutlak 0-180
+  int pLo = limitsOn ? PAN_MIN  : 0, pHi = limitsOn ? PAN_MAX  : 180;
+  int tLo = limitsOn ? TILT_MIN : 0, tHi = limitsOn ? TILT_MAX : 180;
+  int xLo = limitsOn ? EYEX_MIN : 0, xHi = limitsOn ? EYEX_MAX : 180;
+  int yLo = limitsOn ? EYEY_MIN : 0, yHi = limitsOn ? EYEY_MAX : 180;
+
+  tgtPan  = clampRange(atoi(sp), pLo, pHi);
+  tgtTilt = clampRange(atoi(st), tLo, tHi);
+  tgtEyeX = clampRange(atoi(sx), xLo, xHi);
+  tgtEyeY = clampRange(atoi(sy), yLo, yHi);
   laserState = atoi(sl) ? 1 : 0;
 
   lastCmdMs = millis();
