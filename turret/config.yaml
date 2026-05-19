@@ -16,8 +16,8 @@ camera:
 
 detection:
   backend: yolo           # yolo | mediapipe
-  model: yolo11n.pt       # ultralytics; ilk çalıştırmada NCNN'e export edilir
-  use_ncnn: true          # Pi 5'te ~2x hız
+  model: yolo11n.pt       # vision.py bu dosya adını otomatik olarak yolo11n.onnx'e çevirip OpenCV ile açar
+  use_ncnn: false         # OpenCV DNN ONNX kullanıldığı için NCNN export kullanılmıyor
   conf: 0.45              # minimum güven
   person_class_id: 0      # COCO 'person'
   # En büyük (en yakın) insan hedef seçilir.

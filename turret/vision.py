@@ -9,6 +9,7 @@ veya MediaPipe (daha hafif fallback). En büyük insan kutusu hedef seçilir.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -103,23 +104,24 @@ class PersonDetector:
         self.person_class_id = person_class_id
 
         if backend == "yolo":
-            from ultralytics import YOLO
-
-            mdl = YOLO(model)
-            if use_ncnn:
-                # İlk seferde NCNN'e export et (Pi 5'te ~2x hız), sonra onu yükle.
-                try:
-                    export_dir = model.replace(".pt", "_ncnn_model")
-                    import os
-
-                    if not os.path.isdir(export_dir):
-                        print("[detect] YOLO NCNN'e export ediliyor (ilk sefer, biraz sürer)...")
-                        mdl.export(format="ncnn")
-                    mdl = YOLO(export_dir)
-                    print("[detect] YOLO NCNN modeli yüklendi")
-                except Exception as e:  # noqa: BLE001
-                    print(f"[detect] NCNN export başarısız ({e}); .pt ile devam")
-            self._yolo = mdl
+            import cv2
+            
+            # model uzantısını zorla .onnx yapıyoruz (eğer .pt girildiyse)
+            onnx_model = model.replace(".pt", ".onnx")
+            
+            if not os.path.exists(onnx_model):
+                print(f"[detect] UYARI: {onnx_model} bulunamadı!")
+                print("[detect] Lütfen bilgisayarınızda 'yolo export model=yolo11n.pt format=onnx' komutunu çalıştırıp")
+                print(f"[detect] oluşan .onnx dosyasını Raspberry Pi'ye ({onnx_model}) kopyalayın.")
+                
+            try:
+                self._net = cv2.dnn.readNetFromONNX(onnx_model)
+                print(f"[detect] OpenCV DNN ile {onnx_model} yüklendi. (Ultralytics kullanılmıyor)")
+            except Exception as e:
+                print(f"[detect] ONNX modeli yüklenirken hata oluştu: {e}")
+                self._net = None
+                
+            self._input_size = (640, 640)  # YOLO varsayılan giriş boyutu
 
         elif backend == "mediapipe":
             import mediapipe as mp
@@ -137,21 +139,71 @@ class PersonDetector:
         return self._detect_mediapipe(frame)
 
     def _detect_yolo(self, frame: np.ndarray) -> Optional[Target]:
-        res = self._yolo.predict(
-            frame, conf=self.conf, classes=[self.person_class_id],
-            verbose=False
-        )
+        if getattr(self, "_net", None) is None:
+            return None
+            
+        import cv2
+        import numpy as np
+        
+        orig_h, orig_w = frame.shape[:2]
+        
+        # 1. Letterbox resize (görüntü oranını bozmadan 640x640'a sığdır)
+        ratio = min(self._input_size[0] / orig_w, self._input_size[1] / orig_h)
+        new_w = int(orig_w * ratio)
+        new_h = int(orig_h * ratio)
+        
+        resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        dw = (self._input_size[0] - new_w) / 2
+        dh = (self._input_size[1] - new_h) / 2
+        
+        top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+        left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+        
+        img = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
+        
+        # 2. OpenCV DNN forward
+        blob = cv2.dnn.blobFromImage(img, 1 / 255.0, self._input_size, swapRB=True, crop=False)
+        self._net.setInput(blob)
+        preds = self._net.forward()  # YOLOv8/11 çıktısı genelde (1, 84, 8400)
+        
+        preds = preds[0]  # shape: (84, 8400)
+        if preds.shape[0] > preds.shape[1]:
+            preds = preds.T
+            
+        # 3. İnsan sınıfı (person_class_id genelde 0) olasılıkları
+        class_scores = preds[4 + self.person_class_id, :]
+        valid_indices = np.where(class_scores > self.conf)[0]
+        
+        boxes = []
+        confidences = []
+        
+        for idx in valid_indices:
+            score = class_scores[idx]
+            xc, yc, w, h = preds[0:4, idx]
+            
+            # Orijinal resim boyutlarına geri ölçekle
+            xc = (xc - dw) / ratio
+            yc = (yc - dh) / ratio
+            w = w / ratio
+            h = h / ratio
+            
+            x1 = xc - w / 2
+            y1 = yc - h / 2
+            
+            boxes.append([int(x1), int(y1), int(w), int(h)])
+            confidences.append(float(score))
+            
         best: Optional[Target] = None
-        for r in res:
-            if r.boxes is None:
-                continue
-            for b in r.boxes:
-                x1, y1, x2, y2 = (float(v) for v in b.xyxy[0])
-                w, h = int(x2 - x1), int(y2 - y1)
-                t = Target(int((x1 + x2) / 2), int((y1 + y2) / 2),
-                           w, h, float(b.conf[0]))
-                if best is None or t.area > best.area:
-                    best = t
+        if len(boxes) > 0:
+            # Non-Maximum Suppression (Üst üste binen kutuları ele)
+            indices = cv2.dnn.NMSBoxes(boxes, confidences, self.conf, 0.45)
+            if len(indices) > 0:
+                for i in indices.flatten():
+                    x, y, w, h = boxes[i]
+                    t = Target(int(x + w/2), int(y + h/2), int(w), int(h), confidences[i])
+                    if best is None or t.area > best.area:
+                        best = t
+                        
         return best
 
     def _detect_mediapipe(self, frame: np.ndarray) -> Optional[Target]:
