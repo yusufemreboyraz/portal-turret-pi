@@ -1,10 +1,12 @@
 """Portal ses replikleri — durum geçişlerinde çalınır.
 
-Pi 5'te 3.5mm jak YOKTUR: ses USB ses kartı (-> PAM8403 -> 8Ω hoparlör)
-ya da MAX98357A I2S amfi üzerinden çıkar. ALSA varsayılan cihazı doğru
-karta ayarlanmalı (README'ye bak).
+Üç çalma modu (config.sounds.mode):
+  - 'network' : Pi bir HTTP sunucusu açar, telefon tarayıcısı hoparlör olur
+                (Pi 5'te ses kartı yoksa en temiz yol).
+  - 'pygame'  : pygame.mixer ile yerel ses çıkışı (Mac/Linux'ta ses kartı varsa).
+  - 'aplay'   : ALSA aplay subprocess (basit Linux fallback).
 
-pygame.mixer ile bloklamadan çalar; yoksa `aplay`'e düşer.
+play() asla bloklamaz; ses kritik değildir, bir hata sistemi durdurmaz.
 """
 
 from __future__ import annotations
@@ -13,64 +15,101 @@ import os
 import random
 import subprocess
 import time
+from typing import Optional
 
 
 class SoundPlayer:
     def __init__(self, cfg: dict, project_dir: str):
-        self.enabled = cfg["sounds"]["enabled"]
-        base = os.path.join(project_dir, cfg["sounds"]["base_dir"])
-        self.groups = {
-            k: [os.path.join(base, p) for p in cfg["sounds"][k]]
-            for k in ("found", "lock", "lost")
+        s = cfg["sounds"]
+        self.enabled = s["enabled"]
+        # 'pygame' | 'network' | 'aplay' (eski configler için default pygame)
+        self.mode = s.get("mode", "pygame")
+        base_rel = s["base_dir"]
+        self.base_dir = os.path.join(project_dir, base_rel)
+        # Gruplar — RELATIVE yollar (network modu için lazım); local mod
+        # tam yola çevirir.
+        self._rel_groups = {k: list(s[k]) for k in ("found", "lock", "lost")}
+        self._abs_groups = {
+            k: [os.path.join(self.base_dir, p) for p in v]
+            for k, v in self._rel_groups.items()
         }
-        self._backend = None
-        self._mixer = None
         self._last_play = 0.0
+        self._mixer = None
+        self._streamer = None
 
         if not self.enabled:
             return
-        try:
-            import pygame
 
-            pygame.mixer.init()
-            self._mixer = pygame
-            self._backend = "pygame"
-        except Exception as e:  # noqa: BLE001
-            print(f"[sound] pygame yok ({e}); 'aplay' kullanılacak")
-            self._backend = "aplay"
+        if self.mode == "network":
+            try:
+                from audio_stream import AudioStreamer
 
+                net = s.get("network", {}) or {}
+                self._streamer = AudioStreamer(
+                    base_dir=self.base_dir,
+                    host=net.get("host", "0.0.0.0"),
+                    port=int(net.get("port", 8765)),
+                )
+                self._streamer.start()
+            except Exception as e:  # noqa: BLE001
+                print(f"[sound] network modu açılamadı ({e}); aplay'e düşülüyor")
+                self.mode = "aplay"
+
+        if self.mode == "pygame":
+            try:
+                import pygame
+
+                pygame.mixer.init()
+                self._mixer = pygame
+            except Exception as e:  # noqa: BLE001
+                print(f"[sound] pygame yok ({e}); 'aplay' kullanılacak")
+                self.mode = "aplay"
+
+    # ---- yardımcılar ----
     def _is_busy(self) -> bool:
-        if self._backend == "pygame":
+        if self.mode == "pygame" and self._mixer is not None:
             return bool(self._mixer.mixer.get_busy())
-        return False
+        return False  # network/aplay'de meşgul takibi yok
 
+    def _pick(self, group: str) -> Optional[tuple]:
+        rels = self._rel_groups.get(group, [])
+        absp = self._abs_groups.get(group, [])
+        idx = [i for i, p in enumerate(absp) if os.path.isfile(p)]
+        if not idx:
+            return None
+        i = random.choice(idx)
+        return rels[i], absp[i]
+
+    # ---- ana arayüz ----
     def play(self, group: str, allow_interrupt: bool = False):
         """group: 'found' | 'lock' | 'lost'. Bloklamaz."""
         if not self.enabled:
             return
-        files = self.groups.get(group, [])
-        files = [f for f in files if os.path.isfile(f)]
-        if not files:
+        pick = self._pick(group)
+        if pick is None:
             return
         if self._is_busy() and not allow_interrupt:
             return
-
-        path = random.choice(files)
+        rel, full = pick
         self._last_play = time.monotonic()
         try:
-            if self._backend == "pygame":
-                self._mixer.mixer.music.load(path)
+            if self.mode == "network" and self._streamer is not None:
+                self._streamer.play_file(rel)
+            elif self.mode == "pygame" and self._mixer is not None:
+                self._mixer.mixer.music.load(full)
                 self._mixer.mixer.music.play()
             else:
                 subprocess.Popen(
-                    ["aplay", "-q", path],
+                    ["aplay", "-q", full],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )
-        except Exception as e:  # noqa: BLE001 - ses kritik değil, sistemi durdurma
-            print(f"[sound] çalınamadı {path}: {e}")
+        except Exception as e:  # noqa: BLE001 - ses kritik değil
+            print(f"[sound] çalınamadı {full}: {e}")
 
     def close(self):
-        if self._backend == "pygame":
+        if self._streamer is not None:
+            self._streamer.stop()
+        if self._mixer is not None:
             try:
                 self._mixer.mixer.quit()
             except Exception:  # noqa: BLE001

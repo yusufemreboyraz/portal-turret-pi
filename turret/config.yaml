@@ -2,7 +2,7 @@
 # Açılar derece (0-180). Kalibrasyon değerleri calibrate.py tarafından doldurulur.
 
 serial:
-  port: /dev/ttyACM0   # Mac. (Pi'de /dev/ttyACM0 olur)
+  port: /dev/ttyACM0   # Pi/Linux. (Mac: /dev/cu.usbmodemXXXX)
   baud: 115200
   command_hz: 30          # saniyede gönderilen komut sayısı
   reconnect_delay_s: 2.0
@@ -18,8 +18,8 @@ detection:
   # Mac geliştirme: backend=yolo (ultralytics + .pt) hızlı kurulum.
   # Pi 5 üretim: backend=onnx + yolo11n.onnx ÖNERİLİR
   #   -> ultralytics/torch GEREKMEZ; sadece onnxruntime+numpy+cv2.
-  backend: yolo           # yolo | onnx | mediapipe
-  model: yolo11n.pt       # yolo: .pt | onnx: .onnx (turret/ klasöründen veya tam yol)
+  backend: onnx           # yolo | onnx | mediapipe  (Pi'de onnx)
+  model: yolo11n.onnx     # yolo: .pt | onnx: .onnx (turret/ klasöründen veya tam yol)
   use_ncnn: true          # sadece backend=yolo iken etkili (NCNN export)
   conf: 0.45              # minimum güven
   person_class_id: 0      # COCO 'person'
@@ -58,6 +58,15 @@ timers:
 
 sounds:
   enabled: true
+  # Çalma modu:
+  #   network -> Pi HTTP sunucusu açar, telefon tarayıcısı hoparlör olur
+  #              (Pi 5'te ses kartı yoksa ÖNERİLEN)
+  #   pygame  -> yerel pygame.mixer (Mac/ses kartı olan Linux)
+  #   aplay   -> ALSA aplay subprocess
+  mode: network
+  network:
+    host: 0.0.0.0
+    port: 8765
   base_dir: sounds
   found:  [TargetFound/ISeeYou.wav, TargetFound/ThereYouAre.wav, TargetFound/Acquired.wav]
   lock:   [TargetFound/Gotcha.wav, Fire.wav, Fire/FireShort.wav]
