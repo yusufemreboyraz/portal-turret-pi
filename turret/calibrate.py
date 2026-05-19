@@ -33,7 +33,7 @@ CFG_PATH = os.path.join(HERE, "config.yaml")
 
 
 def load_cfg():
-    with open(CFG_PATH) as f:
+    with open(CFG_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -57,11 +57,11 @@ def write_calibration(pan_axis, tilt_axis):
 
         ry = YAML()
         ry.preserve_quotes = True
-        with open(CFG_PATH) as f:
+        with open(CFG_PATH, encoding="utf-8") as f:
             doc = ry.load(f)
         doc["calibration"]["pan"].update(pan_axis)
         doc["calibration"]["tilt"].update(tilt_axis)
-        with open(CFG_PATH, "w") as f:
+        with open(CFG_PATH, "w", encoding="utf-8") as f:
             ry.dump(doc, f)
         print("[calib] config.yaml güncellendi (yorumlar korundu)")
     except ImportError:
@@ -69,7 +69,7 @@ def write_calibration(pan_axis, tilt_axis):
         cfg = load_cfg()
         cfg["calibration"]["pan"] = pan_axis
         cfg["calibration"]["tilt"] = tilt_axis
-        with open(CFG_PATH, "w") as f:
+        with open(CFG_PATH, "w", encoding="utf-8") as f:
             yaml.safe_dump(cfg, f, sort_keys=False, allow_unicode=True)
         print("[calib] config.yaml güncellendi (ruamel yok -> yorumlar kayboldu)")
 

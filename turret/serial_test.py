@@ -24,7 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
-    with open(os.path.join(HERE, "config.yaml")) as f:
+    with open(os.path.join(HERE, "config.yaml"), encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     link = SerialLink(cfg["serial"]["port"], cfg["serial"]["baud"],
                       cfg["serial"]["command_hz"],

@@ -27,6 +27,16 @@ class SoundPlayer:
         self._mixer = None
         self._last_play = 0.0
 
+        # UDP üzerinden sesi tetiklemek için streaming ayarları
+        self._streaming = cfg.get("streaming", {}).get("enabled", False)
+        if self._streaming:
+            import socket
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._target_ip = cfg["streaming"].get("client_ip", "127.0.0.1")
+            self._target_port = cfg["streaming"].get("audio_port", 5001)
+        else:
+            self._sock = None
+
         if not self.enabled:
             return
         try:
@@ -46,6 +56,13 @@ class SoundPlayer:
 
     def play(self, group: str, allow_interrupt: bool = False):
         """group: 'found' | 'lock' | 'lost'. Bloklamaz."""
+        if self._sock:
+            try:
+                # Sesi çalmak yerine veya yerel çalmanın yanında UDP tetikleyicisi gönder
+                self._sock.sendto(group.encode('utf-8'), (self._target_ip, self._target_port))
+            except Exception as e:
+                print(f"[sound] UDP tetikleyici gönderilemedi: {e}")
+
         if not self.enabled:
             return
         files = self.groups.get(group, [])

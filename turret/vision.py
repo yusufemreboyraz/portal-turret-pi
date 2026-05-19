@@ -42,7 +42,7 @@ class Camera:
         self._cv = None
 
         try:
-            from picamera2 import Picamera2  # type: ignore
+            from picamera2 import Picamera2, controls  # type: ignore
 
             self._picam = Picamera2()
             cfg = self._picam.create_preview_configuration(
@@ -50,6 +50,10 @@ class Camera:
             )
             self._picam.configure(cfg)
             self._picam.start()
+            try:
+                self._picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+            except Exception as e:
+                print(f"[camera] Sürekli odaklama (AF) ayarlanamadı: {e}")
             print("[camera] picamera2 (CSI) aktif")
         except Exception as e:  # noqa: BLE001 - Pi dışında veya modül yoksa
             print(f"[camera] picamera2 yok ({e}); OpenCV VideoCapture deneniyor")

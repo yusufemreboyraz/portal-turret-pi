@@ -36,7 +36,7 @@ LOST = "TARGET_LOST"
 
 
 def load_cfg():
-    with open(os.path.join(HERE, "config.yaml")) as f:
+    with open(os.path.join(HERE, "config.yaml"), encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -72,6 +72,28 @@ class Turret:
         self._cx = cfg["camera"]["width"] // 2
         self._cy = cfg["camera"]["height"] // 2
 
+        self._streaming = cfg.get("streaming", {}).get("enabled", False)
+        if self._streaming:
+            ip = cfg["streaming"].get("client_ip", "127.0.0.1")
+            port = cfg["streaming"].get("video_port", 5000)
+            fps = cfg["camera"]["fps"]
+            w = cfg["camera"]["width"]
+            h = cfg["camera"]["height"]
+            # Raspberry Pi'de düşük gecikme için x264enc donanım/yazılım encoding
+            pipeline = (
+                f"appsrc ! videoconvert ! video/x-raw,format=I420 ! "
+                f"x264enc tune=zerolatency bitrate=1000 speed-preset=ultrafast ! "
+                f"rtph264pay ! udpsink host={ip} port={port}"
+            )
+            import cv2
+            self._video_writer = cv2.VideoWriter(pipeline, cv2.CAP_GSTREAMER, 0, fps, (w, h))
+            if not self._video_writer.isOpened():
+                print("[turret] UYARI: GStreamer VideoWriter başlatılamadı!")
+            else:
+                print(f"[turret] GStreamer yayını başladı -> {ip}:{port}")
+        else:
+            self._video_writer = None
+
     def _set_state(self, new: str):
         if new != self.state:
             print(f"[state] {self.state} -> {new}")
@@ -88,7 +110,7 @@ class Turret:
         cfg = self.cfg
         show = cfg["debug"]["show_window"]
         print_fps = cfg["debug"]["print_fps"]
-        if show:
+        if show or self._video_writer is not None:
             import cv2
         frames = 0
         fps_t0 = time.monotonic()
@@ -144,8 +166,8 @@ class Turret:
                     self.sound.play("lock")
                     self._last_fire = now
 
-            # ---- debug ----
-            if show:
+            # ---- debug & streaming ----
+            if show or self._video_writer is not None:
                 if target:
                     cv2.rectangle(
                         frame,
@@ -154,6 +176,11 @@ class Turret:
                         (0, 0, 255), 2)
                 cv2.putText(frame, self.state, (10, 25),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+            if self._video_writer is not None:
+                self._video_writer.write(frame)
+
+            if show:
                 cv2.imshow("turret", frame)
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
@@ -177,6 +204,8 @@ class Turret:
         self.cam.close()
         self.link.close()
         self.sound.close()
+        if getattr(self, "_video_writer", None) is not None:
+            self._video_writer.release()
         if show:
             import cv2
             cv2.destroyAllWindows()

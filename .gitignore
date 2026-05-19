@@ -1,1 +1,4 @@
 /turret/venv
+/venv
+/turret/__pycache__
+/__pycache__
