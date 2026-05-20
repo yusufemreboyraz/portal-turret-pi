@@ -78,6 +78,8 @@ class Turret:
         # Nişan noktası ofseti: kutu yüksekliğinin oranı kadar Y'de kaydırır.
         # 0.0 = tam merkez, -0.2 = merkezden %20 yukarı (göğüs/baş bölgesi).
         self.aim_y_offset = float(d.get("aim_y_offset_ratio", -0.2))
+        self.aim_off_px_x = int(d.get("aim_pixel_offset_x", 0))
+        self.aim_off_px_y = int(d.get("aim_pixel_offset_y", 0))
         self.ctrl = Controller(cfg)
         self.link = SerialLink(cfg["serial"]["port"], cfg["serial"]["baud"],
                                cfg["serial"]["command_hz"],
@@ -174,7 +176,10 @@ class Turret:
             if has_target and self.state in (ACQUIRED, TRACKING):
                 # Merkezden yukarıya doğru ofset (kutu yüksekliği oranı).
                 aim_y = target.cy + int(round(self.aim_y_offset * target.h))
-                px = (target.cx, aim_y)
+                # Lazer ↔ kamera paralaks ince ayarı (calibrate_aim.py yazar).
+                aim_x = target.cx + self.aim_off_px_x
+                aim_y = aim_y + self.aim_off_px_y
+                px = (aim_x, aim_y)
             else:
                 px = None
                 if self.state == SEARCHING and self.idle_enabled:

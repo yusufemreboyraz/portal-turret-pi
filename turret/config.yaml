@@ -25,6 +25,10 @@ detection:
   person_class_id: 0      # COCO 'person'
   aim_y_offset_ratio: -0.2  # nişan noktası: 0=tam merkez, -0.2=merkezden %20 yukarı (göğüs)
                             # -0.35 ≈ baş/omuz, 0 = göbek/merkez. Pozitif değer aşağı.
+  # Lazer ↔ kamera paralaks düzeltmesi (calibrate_aim.py yazar).
+  # Birim: piksel. +x sağa, +y aşağı.
+  aim_pixel_offset_x: 0
+  aim_pixel_offset_y: 0
   # En büyük (en yakın) insan hedef seçilir.
 
 servos:
