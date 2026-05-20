@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 import os
+import random
 import signal
 import sys
 import time
@@ -48,8 +49,25 @@ class Turret:
         self.lost_s = t["lost_ms"] / 1000.0
         self.reacquire_s = t["reacquire_ms"] / 1000.0
         self.fire_cooldown_s = t["fire_cooldown_ms"] / 1000.0
-        self.lock_tol = t["lock_tolerance_px"]
+        self.fire_bbox_ratio = float(t.get("fire_bbox_ratio", 0.40))
+        self.fire_duration_s = t.get("fire_duration_ms", 600) / 1000.0
         self.laser_on = cfg["servos"]["laser_always_on"]
+
+        rc = cfg.get("recoil", {}) or {}
+        self.recoil_enabled = bool(rc.get("enabled", True))
+        self.recoil_tilt_deg = float(rc.get("tilt_kick_deg", 10))
+        self.recoil_pan_deg = float(rc.get("pan_jitter_deg", 3))
+        self.recoil_freq = float(rc.get("freq_hz", 7.0))
+
+        idle = cfg.get("idle_scan", {}) or {}
+        self.idle_enabled = bool(idle.get("enabled", True))
+        self.idle_min_s = float(idle.get("min_change_s", 1.5))
+        self.idle_max_s = float(idle.get("max_change_s", 4.0))
+        self.idle_pan_margin = float(idle.get("pan_margin_deg", 5))
+        self.idle_tilt_jitter = float(idle.get("tilt_jitter_deg", 8))
+        self._idle_pan = float(cfg["servos"]["pan"]["center"])
+        self._idle_tilt = float(cfg["servos"]["tilt"]["center"])
+        self._idle_next_t = 0.0
 
         self.cam = Camera(cfg["camera"]["width"], cfg["camera"]["height"],
                           cfg["camera"]["fps"], cfg["camera"]["hflip"],
@@ -83,6 +101,24 @@ class Turret:
 
     def _in_state(self) -> float:
         return time.monotonic() - self._state_since
+
+    def _idle_step(self, now: float):
+        """Boştayken doğal "etrafa bakınma" — rastgele pan + küçük tilt."""
+        if now >= self._idle_next_t:
+            ps = self.cfg["servos"]["pan"]
+            ts = self.cfg["servos"]["tilt"]
+            lo = ps["min"] + self.idle_pan_margin
+            hi = ps["max"] - self.idle_pan_margin
+            # Karışık genlik: bazen küçük, bazen büyük hareket -> doğal his.
+            mag = random.choice([0.25, 0.5, 0.85, 1.0])
+            mid = (lo + hi) / 2.0
+            half = (hi - lo) / 2.0 * mag
+            self._idle_pan = random.uniform(mid - half, mid + half)
+            self._idle_tilt = ts["center"] + random.uniform(
+                -self.idle_tilt_jitter, self.idle_tilt_jitter)
+            self._idle_next_t = now + random.uniform(
+                self.idle_min_s, self.idle_max_s)
+        return (self._idle_pan, self._idle_tilt)
 
     def stop(self, *_):
         self._running = False
@@ -134,23 +170,40 @@ class Turret:
                     self._set_state(SEARCHING)
 
             # ---- aktüasyon ----
+            target_angle = None
             if has_target and self.state in (ACQUIRED, TRACKING):
                 # Merkezden yukarıya doğru ofset (kutu yüksekliği oranı).
                 aim_y = target.cy + int(round(self.aim_y_offset * target.h))
                 px = (target.cx, aim_y)
             else:
                 px = None
-            cmd = self.ctrl.update(px)
-            self.link.send(cmd.pan, cmd.tilt, cmd.eye_x, cmd.eye_y,
-                           laser=self.laser_on)
+                if self.state == SEARCHING and self.idle_enabled:
+                    target_angle = self._idle_step(now)
+            cmd = self.ctrl.update(px, target_angle=target_angle)
 
-            # ---- "kilit" -> Fire sesi (ateş yok, sadece ses) ----
-            if self.state == TRACKING and has_target:
-                err = math.hypot(target.cx - self._cx, target.cy - self._cy)
-                if (err <= self.lock_tol
-                        and now - self._last_fire >= self.fire_cooldown_s):
+            # ---- ATEŞ tetiği: bbox kareyi yeterince kaplıyor mu? ----
+            if (self.state == TRACKING and has_target
+                    and (now - self._last_fire) >= self.fire_cooldown_s):
+                bbox_ratio = (target.w * target.h) / float(
+                    self.cfg["camera"]["width"] * self.cfg["camera"]["height"])
+                if bbox_ratio >= self.fire_bbox_ratio:
                     self.sound.play("lock")
+                    self.link.send_raw("F")     # LED koreografisini başlat
                     self._last_fire = now
+
+            # ---- Geri tepme: ateş penceresi boyunca pan/tilt'e ofset ekle ----
+            pan_out, tilt_out = cmd.pan, cmd.tilt
+            if self.recoil_enabled:
+                dt = now - self._last_fire
+                if 0.0 <= dt < self.fire_duration_s:
+                    decay = 1.0 - (dt / self.fire_duration_s)         # 1 -> 0
+                    phase = 2 * math.pi * self.recoil_freq * dt
+                    tilt_out += int(round(self.recoil_tilt_deg * decay *
+                                          (0.5 + 0.5 * math.cos(phase))))
+                    pan_out += int(round(self.recoil_pan_deg * decay *
+                                         math.sin(phase * 1.3)))
+            self.link.send(pan_out, tilt_out, cmd.eye_x, cmd.eye_y,
+                           laser=self.laser_on)
 
             # ---- debug ----
             if show:

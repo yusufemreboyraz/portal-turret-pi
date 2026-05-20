@@ -96,10 +96,17 @@ class Controller:
             nxt = cur - self.max_step
         return nxt
 
-    def update(self, target_px) -> ServoCommand:
-        """target_px = (cx, cy) ya da None (hedef yok -> merkeze yumuşak dönüş)."""
+    def update(self, target_px, target_angle=None) -> ServoCommand:
+        """target_px = (cx, cy) ya da None.
+        target_angle verilirse (pan_deg, tilt_deg) doğrudan kullanılır
+        (boştayken doğal tarama için). Verilmezse:
+          - target_px varsa kalibrasyondan piksel->açı,
+          - yoksa servo merkezine yumuşak dönüş.
+        """
         ps, ts = self.servos["pan"], self.servos["tilt"]
-        if target_px is None:
+        if target_angle is not None:
+            raw_pan, raw_tilt = float(target_angle[0]), float(target_angle[1])
+        elif target_px is None:
             raw_pan = float(ps["center"])
             raw_tilt = float(ts["center"])
         else:

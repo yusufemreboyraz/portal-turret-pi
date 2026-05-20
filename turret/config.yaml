@@ -29,8 +29,8 @@ detection:
 
 servos:
   # Mekanik limitler — montajda kendi turretine göre daralt.
-  pan:  { min: 70, max: 140, center: 105, invert: false }   # sol 70 - sağ 140 (ölçülen)
-  tilt: { min: 30, max: 140, center: 85, invert: false }    # yukarı 30 - aşağı 140 (ölçülen)
+  pan:  { min: 55, max: 125, center: 90, invert: false }   # genişlik 70, merkez 90
+  tilt: { min: 35, max: 145, center: 90, invert: false }   # genişlik 110, merkez 90
   eye_x: { min: 55, max: 135, center: 95, invert: false }   # sol 55 - sağ 135
   eye_y: { min: 0, max: 70, center: 35, invert: false }     # yukarı 0 - aşağı 70
   eye_follow_gain: 0.35   # (sadece eye_direct:false iken) göz pan/tilt'i taklit oranı
@@ -45,16 +45,33 @@ smoothing:
 # Kamera pikselinden servo açısına doğrusal eşleme.
 # calibrate.py bunu yazar. Varsayılan: kabaca lineer, FOV ~ tüm aralık.
 calibration:
-  pan:  { px_min: 0,   px_max: 640, deg_at_px_min: 140, deg_at_px_max: 70 }
-  tilt: { px_min: 0,   px_max: 480, deg_at_px_min: 140, deg_at_px_max: 30 }
+  pan:  { px_min: 0,   px_max: 640, deg_at_px_min: 125, deg_at_px_max: 55 }
+  tilt: { px_min: 0,   px_max: 480, deg_at_px_min: 145, deg_at_px_max: 35 }
 
 # Eski Turret.ini zamanlayıcı mantığı (ms).
 timers:
   found_ms: 1000          # hedef onayı (TARGET_ACQUIRED -> TRACKING)
   lost_ms: 1000           # hedef kaybı onayı
   reacquire_ms: 500       # kayıptan sonra yeniden kilit penceresi
-  fire_cooldown_ms: 4000  # "Fire/Gotcha" sesi tekrar aralığı
-  lock_tolerance_px: 40   # hedef merkeze bu kadar yakınsa "kilit"
+  fire_cooldown_ms: 4000  # "Fire/Gotcha" sesi + LED + geri tepme tekrar aralığı
+  fire_duration_ms: 600   # ateş efekti süresi (firmware FIRE_MS ile uyumlu)
+  fire_bbox_ratio: 0.40   # bbox bu oranda kareyi kaplarsa ATEŞ (yakınlık eşiği)
+  lock_tolerance_px: 40   # (eski; artık kullanılmıyor — fire_bbox_ratio devraldı)
+
+# Geri tepme efekti: ateş penceresi boyunca pan/tilt'e ofset.
+recoil:
+  enabled: true
+  tilt_kick_deg: 10       # kol yukarı tepme miktarı (yön mekanik kuruluma göre)
+  pan_jitter_deg: 3       # sağa-sola hafif titreme
+  freq_hz: 7.0            # tepme salınım frekansı
+
+# Boştayken doğal "etrafa bakınma".
+idle_scan:
+  enabled: true
+  min_change_s: 1.5       # yeni rastgele hedef seçme aralığı (alt)
+  max_change_s: 4.0       # (üst) — arada bekler, doğal his
+  pan_margin_deg: 5       # uç sınırlardan uzak dur
+  tilt_jitter_deg: 8      # küçük dikey rastgele kıpırtı
 
 sounds:
   enabled: true
