@@ -59,15 +59,17 @@ timers:
   lock_tolerance_px: 40   # (eski; artık kullanılmıyor — fire_bbox_ratio devraldı)
 
 # Geri tepme efekti: ateş penceresi boyunca pan/tilt'e ofset.
+# Kapalı = temiz hareket. true yaparsan ateş anında sarsıntı eklenir.
 recoil:
-  enabled: true
+  enabled: false
   tilt_kick_deg: 10       # kol yukarı tepme miktarı (yön mekanik kuruluma göre)
   pan_jitter_deg: 3       # sağa-sola hafif titreme
   freq_hz: 7.0            # tepme salınım frekansı
 
 # Boştayken doğal "etrafa bakınma".
+# Kapalı = boştayken merkezde sabit durur. true = rastgele tarama (kesik kesik his).
 idle_scan:
-  enabled: true
+  enabled: false
   min_change_s: 1.5       # yeni rastgele hedef seçme aralığı (alt)
   max_change_s: 4.0       # (üst) — arada bekler, doğal his
   pan_margin_deg: 5       # uç sınırlardan uzak dur
