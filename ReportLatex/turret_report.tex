@@ -1,0 +1,96 @@
+\documentclass[lettersize,journal]{IEEEtran}
+\usepackage{amsmath,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{array}
+\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{verbatim}
+\usepackage{graphicx}
+\usepackage{cite}
+\hyphenation{op-tical net-works semi-conduc-tor Raspberry Arduino ONNX}
+
+% Portal Turret project report — Faz 0 skeleton (body sections: Faz 1)
+% Source plans: plans/abstract-conclusion.md, plans/team-and-contributions.md
+
+\begin{document}
+
+\title{Edge-Deployed Vision and Serial Actuation for an\\ Embedded Portal-Inspired Pan-Tilt Turret}
+
+\author{Hamza~Tekin, Yusuf~Emre~Boyraz, Kerem~\.{C}atalba\c{s}, and Yusuf~Baki~Demiry\"{u}rek%
+\thanks{Manuscript prepared for the Embedded Systems course project, Abdullah G\"{u}l University/Computer Engineering Department, May 2026. Special thanks to Assoc. Prof. Dr. Khaled Heija for project guidance and support.}%
+\thanks{H.~Tekin and Y.~E.~Boyraz developed the software stack including ONNX edge inference and network audio. Y.~B.~Demiry\"{u}rek and Y.~E.~Boyraz led mechanical CAD and 3D printing. K.~\.{C}atalba\c{s} was responsible for electrical wiring. All authors participated in system integration. K.~\.{C}atalba\c{s} and H.~Tekin led report preparation; Y.~B.~Demiry\"{u}rek procured components in the Kayseri region.}}
+
+\markboth{Embedded Systems Project Report, May~2026}%
+{Tekin \MakeLowercase{\textit{et al.}}: Edge-Deployed Pan-Tilt Turret}
+
+\maketitle
+
+\begin{abstract}
+This paper presents an embedded pan-tilt turret built by a four-member student team that detects and tracks persons on a Raspberry Pi~5 and offloads real-time servo actuation to an Arduino Uno~R4. A fixed CSI camera captures $640\times480$ video; a YOLO11n detector is converted to ONNX and executed with ONNX Runtime using an edge-AI, quantization-oriented deployment that avoids on-device Ultralytics analytics or the full PyTorch stack. The microcontroller enforces slew-rate limits, mechanical bounds, and a $500$~ms communication failsafe. A four-state finite-state machine debounces target acquisition and loss and triggers Portal-themed audio delivered via a custom HTTP stream to smartphones after loudspeaker drivers failed and replacements were unavailable in Kayseri, plus LED sequences when the target fills sufficient image area. Interactive calibration maps pixels to servo angles under fixed-camera, moving-head geometry. Section~V reports detection-to-command latency, frame rate, and tracking success metrics from bench tests.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Edge AI, ONNX, YOLO, embedded vision, pan-tilt platform, serial communication, failsafe, Raspberry Pi.
+\end{IEEEkeywords}
+
+% --- Faz 1: fill from plans/intro.md ---
+\section{Introduction}
+\label{sec:intro}
+\textit{[Faz 1 --- source: plans/intro.md]}
+
+% --- Faz 1: fill from plans/architecture.md ---
+\section{System Architecture}
+\label{sec:arch}
+\textit{[Faz 1 --- source: plans/architecture.md; include Fig.~\ref{fig:arch} block diagram.]}
+
+% --- Faz 1: fill from plans/methodology-*.md and edge-ai-onnx-deployment.md ---
+\section{Methodology}
+\label{sec:method}
+
+\subsection{Vision and Edge AI Deployment}
+\label{sec:method:vision}
+\textit{[Faz 1 --- plans/edge-ai-onnx-deployment.md, plans/methodology-vision.md]}
+
+\subsection{Control Logic and State Machine}
+\label{sec:method:control}
+\textit{[Faz 1 --- plans/methodology-control.md]}
+
+\subsection{Audio Subsystem}
+\label{sec:method:audio}
+\textit{[Faz 1 --- plans/methodology-audio.md]}
+
+\subsection{Serial Communication}
+\label{sec:method:serial}
+\textit{[Faz 1 --- plans/methodology-communication.md]}
+
+% --- Faz 3 measurements, Faz 1 prose from plans/results.md ---
+\section{Experimental Results}
+\label{sec:results}
+\textit{[Faz 1 after Faz 3 measurements --- plans/results.md; Fig.~latency, Table~metrics.]}
+
+% --- Faz 1: fill from plans/discussion.md ---
+\section{Discussion}
+\label{sec:discussion}
+\textit{[Faz 1 --- source: plans/discussion.md]}
+
+% --- Faz 1: fill from plans/abstract-conclusion.md ---
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+\textit{[Faz 1 --- source: plans/abstract-conclusion.md]}
+
+\section*{Acknowledgments}
+The authors thank the course instructor and department for project guidance. Component sourcing in the Kayseri region was coordinated by Y.~B.~Demiry\"{u}rek. Late-stage audio used a custom HTTP streaming solution and team smartphones after local unavailability of replacement speaker drivers.
+
+% --- Faz 1/8: fill from plans/references.md ---
+\begin{thebibliography}{00}
+\bibitem{rpi5} Raspberry Pi Ltd., ``Raspberry Pi 5 Product Brief,'' 2023. [Online]. Available: https://www.raspberrypi.com/products/raspberry-pi-5/
+\bibitem{arduino_r4} Arduino, ``Arduino Uno R4 Documentation,'' 2023. [Online]. Available: https://docs.arduino.cc/hardware/uno-r4-minima
+\bibitem{ultralytics} G. Jocher \textit{et al.}, ``Ultralytics YOLO,'' 2024. [Online]. Available: https://github.com/ultralytics/ultralytics
+\bibitem{onnxruntime} Microsoft, ``ONNX Runtime,'' [Online]. Available: https://onnxruntime.ai/
+\bibitem{picamera2} Raspberry Pi Ltd., ``Camera software documentation,'' [Online]. Available: https://www.raspberrypi.com/documentation/computers/camera\_software.html
+\end{thebibliography}
+
+\end{document}
