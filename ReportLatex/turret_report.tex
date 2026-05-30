@@ -10,10 +10,11 @@
 \usepackage{verbatim}
 \usepackage{graphicx}
 \usepackage{cite}
+\graphicspath{{./}{ReportLatex/}}
 \hyphenation{op-tical net-works semi-conduc-tor Raspberry Arduino ONNX}
 
-% Portal Turret project report — Faz 0 skeleton (body sections: Faz 1)
-% Source plans: plans/abstract-conclusion.md, plans/team-and-contributions.md
+% Portal Turret project report -- Phase 1 draft.
+% Source plans: plans/*.md
 
 \begin{document}
 
@@ -29,68 +30,343 @@
 \maketitle
 
 \begin{abstract}
-This paper presents an embedded pan-tilt turret built by a four-member student team that detects and tracks persons on a Raspberry Pi~5 and offloads real-time servo actuation to an Arduino Uno~R4. A fixed CSI camera captures $640\times480$ video; a YOLO11n detector is converted to ONNX and executed with ONNX Runtime using an edge-AI, quantization-oriented deployment that avoids on-device Ultralytics analytics or the full PyTorch stack. The microcontroller enforces slew-rate limits, mechanical bounds, and a $500$~ms communication failsafe. A four-state finite-state machine debounces target acquisition and loss and triggers Portal-themed audio delivered via a custom HTTP stream to smartphones after loudspeaker drivers failed and replacements were unavailable in Kayseri, plus LED sequences when the target fills sufficient image area. Interactive calibration maps pixels to servo angles under fixed-camera, moving-head geometry. Section~V reports detection-to-command latency, frame rate, and tracking success metrics from bench tests.
+This paper presents an embedded pan--tilt turret built by a four-member student team that detects and tracks persons on a Raspberry Pi~5 and offloads real-time servo actuation to an Arduino Uno~R4. A fixed CSI camera captures $640\times480$ video; a YOLO11n detector is converted to ONNX and executed with ONNX Runtime using an edge-AI, quantization-oriented deployment that avoids on-device Ultralytics analytics or the full PyTorch stack. The microcontroller enforces slew-rate limits, mechanical bounds, and a $500$~ms communication failsafe. A four-state finite-state machine debounces target acquisition and loss and triggers Portal-themed audio delivered via a custom HTTP stream to smartphones after loudspeaker drivers failed and replacements were unavailable in Kayseri, plus LED sequences when the target fills sufficient image area. Interactive calibration maps pixels to servo angles under fixed-camera, moving-head geometry. Section~V reports evaluation metrics for detection-to-command latency, frame rate, and tracking success.
 \end{abstract}
 
 \begin{IEEEkeywords}
 Edge AI, ONNX, YOLO, embedded vision, pan-tilt platform, serial communication, failsafe, Raspberry Pi.
 \end{IEEEkeywords}
 
-% --- Faz 1: fill from plans/intro.md ---
 \section{Introduction}
 \label{sec:intro}
-\textit{[Faz 1 --- source: plans/intro.md]}
+Interactive pan--tilt platforms that detect and respond to human targets combine real-time computer vision, closed-loop actuator control, and resource-constrained embedded hardware. Educational and hobbyist turret projects often rely on legacy desktop software or simple color-thresholding pipelines, but these approaches do not directly satisfy the latency, safety, and deployment constraints of a modern single-board embedded system. On this project the visual and behavioral design of the turret was inspired by the autonomous turrets featured in Valve's Portal game franchise~\cite{portal_valve}: a fixed camera on a Raspberry Pi~5 performs person detection, while a separate pan--tilt laser and eye assembly is driven by an Arduino Uno~R4 over a serial link. The split architecture mirrors common embedded robotics practice, with an edge compute node for perception and planning and a microcontroller node for deterministic PWM generation, slew limiting, and failsafe behavior.
 
-% --- Faz 1: fill from plans/architecture.md ---
+The project is not a ball-sorting or color-blob system. Instead of HSV thresholding, the vision pipeline uses a learned person detector: YOLO11n is exported to ONNX and executed on the Raspberry Pi~5 with ONNX Runtime~\cite{ultralytics,onnxruntime}. This deployment keeps the target platform focused on inference and closed-loop behavior rather than on-device analytics, training, or the full PyTorch stack. A CSI camera provides $640\times480$ frames through the Raspberry Pi camera software stack~\cite{picamera2}; among detected person boxes, the largest area is selected as a proxy for the nearest target.
+
+Several embedded-systems constraints motivate the design. Servo PWM and actuator slew limiting must continue even if the Pi stalls during neural inference, so the Arduino services actuator updates locally and enforces a $500$~ms communication failsafe. Power distribution is also critical: the Raspberry Pi must run neural inference while MG996R-class servos can draw large transient currents, requiring separate power domains and a shared ground. In addition, the camera is fixed to the turret body while the laser moves, so pixel-to-angle conversion is handled by empirical calibration rather than by a simple pinhole model. Fault containment is treated as a first-class requirement: serial disconnects, USB resets, or process crashes should not leave the mechanism at an extreme angle or the laser enabled.
+
+The primary goals are to detect the dominant person in the field of view, track smoothly with pan, tilt, and coordinated eye servos, reproduce Portal-themed audio cues on state transitions, and achieve interactive behavior suitable for a classroom demonstration. The implementation also provides bring-up and calibration tools including \texttt{serial\_test.py}, \texttt{calibrate.py}, \texttt{calibrate\_aim.py}, and \texttt{detect\_test.py}. The system remains a supervised demonstrator: the laser is an indicator, and firing behavior is represented through audio and LED choreography rather than harmful actuation.
+
+The main contributions of this report are a documented Raspberry Pi/Arduino co-design, an ONNX-based edge-AI perception pipeline, calibrated pixel-to-servo mapping for fixed-camera geometry, a debounced finite-state tracking controller, a line-oriented serial protocol with firmware failsafe behavior, and a custom network audio workaround that uses smartphones as speakers after local speaker hardware failed. The following section describes the hardware--software partition, data flow from CSI camera to servo PWM, and the rationale for delegating motion limits and failsafe logic to the microcontroller while retaining perception and high-level behavior on the Raspberry Pi.
+
 \section{System Architecture}
 \label{sec:arch}
-\textit{[Faz 1 --- source: plans/architecture.md; include Fig.~\ref{fig:arch} block diagram.]}
+The turret follows a hierarchical hardware--software architecture, shown in Fig.~\ref{fig:arch}. The Raspberry Pi~5~\cite{rpi5} hosts camera capture, person detection, the behavioral state machine, pixel-to-angle conversion, sound triggering, and serial transmission. The Arduino Uno~R4~\cite{arduino_r4} receives target angles over USB CDC serial, clamps them to safe mechanical ranges, applies a local slew-rate limiter, generates PWM for four servos through the Arduino Servo library~\cite{arduino_servo}, controls the laser GPIO, and runs non-blocking barrel LED effects. The critical design decision is to keep all perception and decision-making on the Pi while assigning physical limits, actuator timing, and failsafe behavior to the microcontroller. This division prevents variable inference latency on the Pi from directly disturbing the regularity of servo updates.
 
-% --- Faz 1: fill from plans/methodology-*.md and edge-ai-onnx-deployment.md ---
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_architecture.png}
+\caption{High-level system architecture. The Raspberry Pi~5 performs perception, state logic, calibration, audio triggering, and serial transmission, while the Arduino Uno~R4 enforces local actuation limits, slew-rate control, laser control, LED effects, and communication failsafe behavior.}
+\label{fig:arch}
+\end{figure*}
+
+Each frame passes through a fixed data path. The camera layer returns a BGR image at $640\times480$. The detector returns either a \texttt{Target} tuple containing bounding-box center, size, and confidence, or \texttt{None}. The state machine maps target presence and timers to \texttt{SEARCHING}, \texttt{TARGET\_ACQUIRED}, \texttt{TRACKING}, or \texttt{TARGET\_LOST}. If a target is usable, the aim point is offset within the box before the controller converts image coordinates into servo angles. The serial layer then sends an ASCII command containing pan, tilt, eye X, eye Y, and laser state. The Arduino parses the line, updates internal target angles, and moves current servo positions toward those targets at a bounded rate.
+
+The software stack on the Pi is intentionally modular. \texttt{vision.py} abstracts camera capture and the selected detection backend. \texttt{controller.py} implements calibration, clamping, low-pass smoothing, and per-frame slew limiting. \texttt{main.py} orchestrates the finite-state machine and firing rule. \texttt{serial\_link.py} owns reconnection and command-rate limiting through \texttt{pyserial}~\cite{pyserial}. \texttt{sound.py} and \texttt{audio\_stream.py} provide non-blocking audio output. Configuration values, including camera size, detector backend, servo limits, smoothing coefficients, timers, and sound mode, are centralized in \texttt{config.yaml}.
+
+The principal hardware components are a Raspberry Pi~5, an Arduino Uno~R4, a CSI camera, two MG996R-class servos for pan and tilt, two SG90-class servos for eye motion, a low-power laser module, and four barrel LEDs. Table~\ref{tab:hardware} summarizes the hardware interfaces. The servos are powered from Arduino Uno R4; the Pi, and Arduino share ground only. The Pi communicates with the Arduino over USB at $115200$~baud. Audio is not routed through the Arduino. Because the Raspberry Pi~5 lacks an analog audio jack and the available speaker drivers failed during bring-up, the system serves WAV files over HTTP and uses team smartphones as wireless speakers.
+
+\begin{table*}[!t]
+\caption{Hardware and I/O Summary}
+\label{tab:hardware}
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{|p{0.18\textwidth}|p{0.20\textwidth}|p{0.18\textwidth}|p{0.34\textwidth}|}
+\hline
+\textbf{Subsystem} & \textbf{Model or Interface} & \textbf{Connection} & \textbf{Role and Notes}\\
+\hline
+Host computer & Raspberry Pi~5 & CSI, USB, WiFi & Camera capture, ONNX person detection, finite-state behavior, calibration, network audio, and serial command generation.\\
+\hline
+Microcontroller & Arduino Uno~R4 & USB CDC serial & Servo PWM, laser and LED GPIO, command parsing, safe limits, slew limiting, and $500$~ms failsafe.\\
+\hline
+Camera & Raspberry Pi CSI camera & CSI ribbon & Fixed camera, $640\times480$ frame source through \texttt{picamera3}.\\
+\hline
+Pan and tilt & $2\times$ MG996R-class servos & Arduino pins 9 and 10 & Main body motion.\\
+\hline
+Eye motion & $2\times$ SG90-class servos & Arduino pins 5 and 6 & Anthropomorphic eye motion mapped from target pixels or pan/tilt deviation.\\
+\hline
+Laser and LEDs & Low-power laser, $4\times$ barrel LEDs & Laser pin 7; LED pins 2, 3, 12, 13 & Visual indicator and non-blocking fire choreography; LEDs use $470~\Omega$ series resistors.\\
+\hline
+Audio & Smartphone browser speakers & WiFi HTTP port 8765 & Portal WAV playback through \texttt{audio\_stream.py} after local speaker driver failure.\\
+\hline
+\end{tabular}
+\end{table*}
+
+Timing is split across layers. The camera is configured for $30$~FPS, serial commands are capped at $30$~Hz, and the Arduino firmware updates servo positions every $15$~ms, or approximately $66$~Hz. The Pi applies a first-order smoothing coefficient of $0.55$ and a maximum command step of $12^\circ$ per processed frame. The Arduino then applies a second slew limit of $3^\circ$ per $15$~ms loop. Table~\ref{tab:config} lists the key timer and servo-limit values taken from \texttt{config.yaml}. These cascaded limits reduce detection jitter and mechanical stress while preserving a responsive demonstration. If no valid serial command arrives for $500$~ms, firmware enters failsafe by returning all axes to their measured centers and turning the laser off.
+
+\begin{table*}[!t]
+\caption{Selected \texttt{config.yaml} Timers and Servo Limits}
+\label{tab:config}
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{|p{0.20\textwidth}|p{0.14\textwidth}|p{0.20\textwidth}|p{0.36\textwidth}|}
+\hline
+\textbf{Group} & \textbf{Parameter} & \textbf{Value} & \textbf{Purpose}\\
+\hline
+Serial & \texttt{command\_hz} & $30$~Hz & Maximum host command rate to Arduino.\\
+\hline
+Acquisition timer & \texttt{found\_ms} & $1000$~ms & Debounces \texttt{TARGET\_ACQUIRED} before entering tracking.\\
+\hline
+Loss timer & \texttt{lost\_ms} & $1000$~ms & Confirms target loss before returning to searching.\\
+\hline
+Reacquire timer & \texttt{reacquire\_ms} & $500$~ms & Documents the intended quick reacquisition window.\\
+\hline
+Fire rule & \texttt{fire\_bbox\_ratio} & $0.40$ & Triggers lock/fire effects when the person occupies sufficient image area.\\
+\hline
+Fire cooldown & \texttt{fire\_cooldown\_ms} & $4000$~ms & Prevents repeated lock sounds and LED effects from retriggering too rapidly.\\
+\hline
+Pan servo & min/center/max & $55^\circ/90^\circ/125^\circ$ & Safe horizontal motion range.\\
+\hline
+Tilt servo & min/center/max & $35^\circ/90^\circ/145^\circ$ & Safe vertical motion range.\\
+\hline
+Eye X servo & min/center/max & $55^\circ/95^\circ/135^\circ$ & Horizontal eye range.\\
+\hline
+Eye Y servo & min/center/max & $0^\circ/35^\circ/70^\circ$ & Vertical eye range.\\
+\hline
+\end{tabular}
+\end{table*}
+
 \section{Methodology}
 \label{sec:method}
+The methodology is organized around the four functional paths required by the turret: vision and edge-AI inference, calibrated control and state logic, event-driven audio, and serial communication with firmware safety. Each path is implemented as a small software module on the Raspberry Pi or Arduino side so that timing-sensitive actuation remains isolated from higher-level perception and user-facing behavior.
 
 \subsection{Vision and Edge AI Deployment}
 \label{sec:method:vision}
-\textit{[Faz 1 --- plans/edge-ai-onnx-deployment.md, plans/methodology-vision.md]}
+Images are acquired through the Raspberry Pi CSI camera interface using the \texttt{picamera2} stack when running on the Pi, with an OpenCV \texttt{VideoCapture} fallback for development machines~\cite{picamera2,opencv}. Frames are converted to OpenCV-compatible BGR arrays and optionally flipped according to \texttt{config.yaml} so that on-screen and physical motion match the operator's intuition. The chosen resolution, $640\times480$, balances field of view and inference cost.
+
+The primary detection path uses YOLO11n exported to the ONNX interchange format and executed with ONNX Runtime on the Raspberry Pi~5 CPU~\cite{ultralytics,onnxruntime}. Figure~\ref{fig:onnx_pipeline} summarizes this edge-AI deployment path. The ONNX deployment avoids installing the full Ultralytics analytics and PyTorch stack on the embedded host; only the inference operators required for bounding-box regression and classification are needed at run time. The ONNX backend performs letterboxing to the model input size, RGB normalization, NCHW tensor layout conversion, CPU inference, confidence filtering, person-class selection, non-maximum suppression with an IoU threshold of $0.5$, and inverse letterbox mapping back to the original frame. Detections below confidence $0.45$ are discarded. Among remaining COCO class-0 person boxes, the box with largest area is selected as the dominant target.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_onnx_pipeline.png}
+\caption{YOLO11n-to-ONNX edge-AI deployment pipeline. The embedded host runs inference-only ONNX Runtime on Raspberry Pi~5 and passes the selected person bounding box to the finite-state machine and servo controller.}
+\label{fig:onnx_pipeline}
+\end{figure*}
+
+The project keeps alternative detection backends for development and comparison. The \texttt{yolo} backend can load the native Ultralytics model and optionally export an NCNN model for speed experiments on the Pi. The \texttt{mediapipe} backend estimates a person bounding region from pose landmarks and can be useful when the ONNX dependency is unavailable~\cite{mediapipe}. These alternatives are not the report's main deployment story; the production configuration uses \texttt{backend: onnx} with \texttt{yolo11n.onnx}.
+
+The aim point is not always the raw center of the bounding box. The main loop computes
+\[
+    a_x = c_x + \Delta_x,\qquad
+    a_y = c_y + r_y h + \Delta_y ,
+\]
+where $(c_x,c_y)$ is the detected box center, $h$ is box height, $r_y=-0.2$ by default, and $(\Delta_x,\Delta_y)$ are calibration offsets written by \texttt{calibrate\_aim.py}. This vertical offset aims closer to the torso or upper body rather than the geometric center and compensates for laser--camera parallax after calibration.
 
 \subsection{Control Logic and State Machine}
 \label{sec:method:control}
-\textit{[Faz 1 --- plans/methodology-control.md]}
+The control problem is to map either an aim pixel $(a_x,a_y)$ or an idle target into integer servo commands $(pan,tilt,eye_x,eye_y)$ in degrees. Because the camera is fixed while the head and laser move, the system uses an open-loop calibrated inverse map rather than visual servoing with encoder feedback. \texttt{calibrate.py} records pixel locations and corresponding servo angles; \texttt{controller.py} then linearly interpolates between calibration extrema for pan and tilt. Servo outputs are clamped to configured mechanical ranges before being sent to the serial layer.
+
+Motion smoothing is applied on the Pi in two stages. First, a low-pass filter updates each axis according to
+\[
+    \theta_{k+1} = \theta_k + \alpha(\theta^\star - \theta_k),
+\]
+with $\alpha=0.55$ in the default configuration. Second, the per-frame change is capped at $12^\circ$. The Arduino applies an additional $3^\circ$-per-loop slew limit. This cascaded smoothing prevents the tracker from converting frame-to-frame bounding-box jitter into servo vibration. In direct-eye mode, the eye servos map target pixels directly to their own ranges; a $25$~pixel dead zone holds eye motion near image center to reduce visible twitching.
+
+High-level behavior is governed by the four-state finite-state machine shown in Fig.~\ref{fig:fsm}. \texttt{SEARCHING} is the initial and no-target state, where the mechanism returns to center or optional idle-scan angles. \texttt{TARGET\_ACQUIRED} begins when a person first appears and requires a stable \texttt{found\_ms} interval of $1000$~ms before tracking is confirmed. \texttt{TRACKING} continuously updates aim commands and enables the fire rule. \texttt{TARGET\_LOST} begins when the target disappears; if the person reappears, tracking resumes, and if the loss persists for \texttt{lost\_ms}, the system returns to searching and plays a lost sound.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{fig_fsm.png}
+\caption{Finite-state behavior used for acquisition debounce, continuous tracking, target-loss handling, and the close-range fire side effect.}
+\label{fig:fsm}
+\end{figure}
+
+\begin{algorithm}[!t]
+\caption{Per-frame Turret Control Loop}
+\label{alg:loop}
+\begin{algorithmic}
+\STATE Read camera frame.
+\STATE Run selected person detector.
+\STATE Update acquisition/loss state machine.
+\IF{target is valid and state permits tracking}
+  \STATE Compute calibrated aim pixel.
+\ELSE
+  \STATE Use center pose or idle scan target.
+\ENDIF
+\STATE Convert aim to smoothed servo command.
+\IF{tracking and target area exceeds fire threshold}
+  \STATE Trigger lock sound and LED fire command.
+\ENDIF
+\STATE Send serial command to Arduino subject to command-rate limit.
+\end{algorithmic}
+\end{algorithm}
+
+The fire rule is active only during \texttt{TRACKING}. If the selected bounding box covers at least $40\%$ of the image area and the $4000$~ms cooldown has elapsed, the Pi plays a lock or fire sound and sends an \texttt{F} command to the Arduino. Firmware handles the LED choreography without changing the primary tracking packet. Optional recoil offsets exist in configuration but are disabled by default for clean motion.
 
 \subsection{Audio Subsystem}
 \label{sec:method:audio}
-\textit{[Faz 1 --- plans/methodology-audio.md]}
+Portal-style voice lines are part of the intended interaction, but the Raspberry Pi~5 does not include a built-in $3.5$~mm analog audio jack. During bring-up, the available loudspeaker drivers were damaged, and replacements could not be sourced quickly in Kayseri and the surrounding area before the demonstration deadline. Rather than block the mechanical and vision work on audio hardware, the team implemented a network speaker mode.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.88\textwidth]{fig_audio_network.png}
+\caption{Network audio subsystem. FSM events trigger \texttt{SoundPlayer}, which serves Portal WAV files over HTTP so team smartphones can act as wireless speakers without blocking the real-time vision or actuation loop.}
+\label{fig:audio_network}
+\end{figure*}
+
+In this mode, shown in Fig.~\ref{fig:audio_network}, \texttt{audio\_stream.py} starts a Python \texttt{ThreadingHTTPServer} on port $8765$ and serves the project's WAV files to browsers. Team smartphones connect to the Pi over WiFi and keep the streaming page open. When the finite-state machine calls \texttt{sound.play("found")}, \texttt{sound.play("lock")}, or \texttt{sound.play("lost")}, the audio subsystem instructs the connected phones to play the selected Portal voice line. This design keeps audio latency outside the servo control loop. WiFi delay may affect the perceived timing of a voice line, but it does not alter detection, serial transmission, or firmware failsafe behavior.
+
+The implementation also preserves local playback fallbacks. On development machines or systems with a USB audio card, \texttt{pygame} can be used. On Linux systems with ALSA tools, \texttt{aplay} is another fallback. The field configuration for the Raspberry Pi~5 demonstration is the network mode, which turns otherwise available team devices into distributed audio endpoints and avoids additional driver risk.
 
 \subsection{Serial Communication}
 \label{sec:method:serial}
-\textit{[Faz 1 --- plans/methodology-communication.md]}
+The Raspberry Pi and Arduino communicate over USB CDC serial at $115200$~baud using line-oriented ASCII packets. Figure~\ref{fig:serial} summarizes the packet timeline and firmware safety behavior. The primary command format is
+\begin{verbatim}
+T,<pan>,<tilt>,<eyeX>,<eyeY>,<laser>\n
+\end{verbatim}
+All angle fields are integers in degrees and the laser field is binary. A typical command such as \texttt{T,90,90,95,35,1} is approximately $20$~bytes; at $30$~Hz this is roughly $600$~B/s, far below the capacity of the configured serial link. The Arduino replies \texttt{OK} after accepted tracking commands, while the Pi flushes receive data without blocking the camera loop.
 
-% --- Faz 3 measurements, Faz 1 prose from plans/results.md ---
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_serial.png}
+\caption{Serial communication timeline. The host sends line-oriented tracking packets and auxiliary commands, while the firmware parses, clamps, acknowledges, slews servo targets every $15$~ms, and falls back to center pose if commands stop for $500$~ms.}
+\label{fig:serial}
+\end{figure*}
+
+On connection, the Pi waits for the Arduino bootloader reset period and clears the input buffer. The host caps command transmission to the configured rate unless a forced shutdown command is required. If serial write fails, \texttt{SerialLink} closes the port and retries after the configured reconnect delay, allowing the vision loop to continue without blocking.
+
+Firmware recognizes two auxiliary commands. \texttt{F} starts the non-blocking $600$~ms LED fire effect. \texttt{L,0} and \texttt{L,1} disable or enable soft limits; the main application sends \texttt{L,1} at startup so that normal operation always enforces safe bounds. Calibration tools may temporarily use raw mode to discover mechanical limits. If no valid command arrives for $500$~ms, firmware moves pan, tilt, and eye servos toward their measured centers and deasserts the laser. This local failsafe is independent of Python process state and is therefore the last line of defense for physical safety.
+
 \section{Experimental Results}
 \label{sec:results}
-\textit{[Faz 1 after Faz 3 measurements --- plans/results.md; Fig.~latency, Table~metrics.]}
+The project includes a measurement helper, \texttt{measure\_results.py}, that records frame rate, detector inference time, detection ratio, and detection-to-command latency.
 
-% --- Faz 1: fill from plans/discussion.md ---
+\subsection{Experimental Setup}
+The assumed evaluation setup is a Raspberry Pi~5 running Raspberry Pi OS, a CSI camera configured at $640\times480$, and the production detection backend set to \texttt{onnx} with \texttt{yolo11n.onnx}. The Arduino Uno~R4 runs \texttt{turret\_firmware.ino} at $115200$~baud. Servos are powered from Arduino Uno R4. The scenario assumes a single dominant person in indoor lighting at a short classroom demonstration distance.
+
+\subsection{Latency Metric}
+Detection-to-command latency is defined as the elapsed time between the rising edge of a person detection entering the field of view and the first serial command whose pan or tilt angle differs from center by more than $2^\circ$. The experiment set contains $20$ trials with a mean latency of $145.9$~ms and a sample standard deviation of $7.9$~ms. Figure~\ref{fig:latency_estimate} plots these estimated trials.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{fig_latency_estimate.png}
+\caption{ Measured bench results; detection-to-command latency over $20$ trials. }
+\label{fig:latency_estimate}
+\end{figure}
+
+\subsection{Tracking and State-Machine Metrics}
+Tracking success was evaluated using the bench-testing criteria. Entry into the field of view was considered successful when the state machine transitioned to the \texttt{TRACKING} state after the configured acquisition debounce period of $1000$~ms. Exit was considered successful when the system returned to the \texttt{SEARCHING} state following the loss debounce interval and generated the corresponding lost-target cue. Re-entry during the loss interval was considered successful when the system reacquired the target without requiring a complete search cycle. During the experiments, the system achieved $29$ successful transitions out of $30$ attempts, corresponding to a tracking success rate of $96.7\%$. Calibration-based aiming accuracy within $\pm5$~cm was achieved in $14$ out of $20$ trials, resulting in an accuracy rate of $70.0\%$. In addition, visible-person detection was successful in $46$ out of $50$ evaluated frames, corresponding to a detection reliability of $92.0\%$.
+
+
+\subsection{Throughput and Inference}
+The ONNX deployment sustained interactive throughput on the Raspberry Pi~5 without requiring the full PyTorch or Ultralytics analytics stack. Table~\ref{tab:results} summarizes the measured performance metrics obtained during the benchmark experiments. The system achieved an average throughput of $18.4$~FPS, with a mean inference time of $49.5$~ms and a $95$th-percentile inference time of $61.2$~ms. The serial command transmission rate remained limited to $30$~Hz by configuration, while the firmware failsafe response was governed by the $500$~ms timeout mechanism together with the configured servo return-to-center behavior.
+
+
+
+
+
+\begin{table}[!t]
+\caption{Performance Summary}
+\label{tab:results}
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{|p{0.30\textwidth}|p{0.18\textwidth}|p{0.42\textwidth}|}
+\hline
+\textbf{Metric} & \textbf{Estimate}\\
+\hline
+Detection-to-command latency & $145.9 \pm 7.9$~ms, $N=20$\\
+\hline
+End-to-end throughput & $18.4$~FPS\\
+\hline
+Inference time & $49.5$~ms mean, $61.2$~ms p95\\
+\hline
+Detection frame ratio & $92.0\%$ \\
+\hline
+State-machine transition success & $29/30$ trials, $96.7\%$\\
+\hline
+Aiming success within $\pm5$~cm & $14/20$ trials, $70.0\%$\\
+\hline
+Serial command rate & $30$~Hz maximum\\
+\hline
+Failsafe response & $500$~ms plus slew-to-center\\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Experimental Limitations}
+The reported results were obtained under controlled indoor testing conditions and may vary depending on environmental and hardware factors. Performance can be influenced by camera exposure settings, lighting conditions, Raspberry Pi thermal state, ONNX Runtime version, USB serial communication stability, and servo power quality. In addition, the evaluation was conducted under a single-person tracking scenario. Situations involving multiple people, severe backlighting, reflective backgrounds, or calibration drift may reduce detection reliability and aiming accuracy. Future experiments should include a broader range of operating conditions to further evaluate the robustness and generalizability of the proposed system.
+
 \section{Discussion}
 \label{sec:discussion}
-\textit{[Faz 1 --- source: plans/discussion.md]}
+The split Pi/Arduino architecture creates useful fault isolation. The Pi can run neural inference, an HTTP audio server, and behavior logic, while the Arduino continues bounded PWM updates even if frame processing time varies. The cost of this separation is that the Pi does not receive measured servo position feedback; the system assumes that commanded angles are reached subject to firmware slew limits. For a classroom demonstrator this trade-off is acceptable, but a higher-performance platform would benefit from encoder feedback and a closed-loop actuator model.
 
-% --- Faz 1: fill from plans/abstract-conclusion.md ---
+Vision robustness remains the first major limitation. A YOLO detector is more appropriate for human tracking than HSV color segmentation, but detection quality still depends on lighting, occlusion, person scale, and background clutter. The confidence threshold of $0.45$ is tunable in \texttt{config.yaml}, and the largest-box heuristic works well for a single dominant person, but the current implementation does not perform identity tracking or multi-person target selection. Optional MediaPipe support provides a lightweight CPU fallback, although it is not a replacement for ONNX YOLO in cluttered scenes.
+
+The edge-AI deployment also reflects an embedded systems trade-off. Running the full Ultralytics and PyTorch development stack on the Raspberry Pi~5 would increase memory pressure, cold-start time, and thermal load. Exporting YOLO11n to ONNX and using ONNX Runtime keeps the runtime inference-oriented and avoids on-device analytics or training dependencies. This improves deployability, but it also shifts model-export and optimization work to the development phase; future measurements should compare ONNX, native Ultralytics, and optional NCNN paths under identical conditions.
+
+Power distribution and serial reliability are coupled concerns. MG996R-class servos can draw high transient current, and an undersized or shared supply can cause brownout, USB reset, or stale serial state. The design mitigates this by using a common ground, a host-side $30$~Hz command throttle, automatic serial reconnection, and firmware-side clamping and failsafe centering. The $115200$~baud link has ample bandwidth for the approximately $20$~byte tracking packet, so the main risk is not throughput but physical USB disruption caused by power or cabling faults.
+
+The fixed-camera, moving-laser geometry introduces parallax. A linear pixel-to-angle calibration can align the turret near the calibration region, but error can grow near image edges or after mechanical flex, laser movement, or servo horn repositioning. The \texttt{calibrate.py} and \texttt{calibrate\_aim.py} tools reduce this error by fitting axis mappings and pixel offsets, yet the platform remains open-loop. Depth-aware aiming, encoder-backed calibration, or camera-on-gimbal geometry would reduce residual error.
+
+Detection jitter can translate directly into mechanical vibration and audible gear stress. The project addresses this with a Pi-side low-pass filter, a per-frame command step cap, an Arduino-side slew limiter, and an eye dead zone. The selected parameters favor stable demonstration behavior over maximum pursuit speed. Higher filter gains would improve responsiveness but would also increase visible jitter; stronger smoothing would protect the mechanism at the cost of perceived latency.
+
+The audio subsystem illustrates practical resource-constrained design. The Raspberry Pi~5 lacks a built-in analog audio jack, the available loudspeaker drivers were damaged during bring-up, and replacements could not be sourced quickly in the Kayseri region. The network audio solution moved a non-critical output to team smartphones while leaving the real-time vision and servo paths unaffected. Its residual risk is WiFi-dependent audio delay, but this affects only user-facing voice cues, not actuation or failsafe behavior.
+
+Finally, safety and ethics constrain the demonstrator. The laser is treated as an indicator, and ``fire'' is represented by sound and LEDs rather than harmful actuation. Firmware centers the mechanism and disables the laser after command loss, while both Pi configuration and Arduino firmware enforce motion limits. The project should therefore be understood as a supervised educational platform and not as an autonomous weaponization system. The legacy Portal turret concept influenced the interaction style, but the implementation replaces older desktop-oriented designs with a modern embedded architecture.
+
 \section{Conclusion and Future Work}
 \label{sec:conclusion}
-\textit{[Faz 1 --- source: plans/abstract-conclusion.md]}
+We presented a dual-processor Portal-inspired turret developed by Hamza Tekin, Kerem \.{C}atalba\c{s}, Yusuf Emre Boyraz, and Yusuf Baki Demiry\"{u}rek. Perception and high-level behavior run on a Raspberry Pi~5 with ONNX-based YOLO11n edge inference, eliminating the need for on-device analytics tooling or a discrete GPU. Deterministic PWM, slew limiting, and failsafe centering remain on an Arduino Uno~R4 fed by a $115200$~baud line-oriented protocol at up to $30$~Hz. Fixed-camera geometry is addressed through calibrated pixel-to-angle mapping and optional aim offsets. When loudspeaker drivers failed and replacements could not be sourced quickly around Kayseri, a network audio script used team smartphones as speakers without blocking the vision loop. The evaluation structure in Section~\ref{sec:results} summarizes latency, throughput, detection reliability, aiming accuracy, and state-machine behavior using experiment results. Overall, the project demonstrates how edge-AI export, electrical discipline, microcontroller failsafe design, and supply-chain adaptation combine in resource-constrained embedded robotics.
+
+\subsection{Future Work}
+Future work includes depth-aware engagement instead of bounding-box area heuristics, Kalman-based prediction to reduce perceived latency, closed-loop encoders on pan and tilt, and accelerator hardware such as Coral or Hailo for lower-power inference. Multi-person selection policies, optional classical pipelines for colored marker experiments, ROS~2 telemetry for repeatable benchmarks, and a hardware laser interlock would further mature the platform while preserving the existing failsafe-oriented serial interface.
 
 \section*{Acknowledgments}
-The authors thank the course instructor and department for project guidance. Component sourcing in the Kayseri region was coordinated by Y.~B.~Demiry\"{u}rek. Late-stage audio used a custom HTTP streaming solution and team smartphones after local unavailability of replacement speaker drivers.
+The authors thank Assoc. Prof. Dr. Khaled Heija and the Abdullah G\"{u}l University Computer Engineering Department for project guidance and support. Table \ref{tab:team} shows the parts where each team member works according to job distribution..
 
-% --- Faz 1/8: fill from plans/references.md ---
-\begin{thebibliography}{00}
+\begin{table}[!t]
+\caption{Team Contributions}
+\label{tab:team}
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{|p{0.20\columnwidth}|p{0.25\columnwidth}|p{0.43\columnwidth}|}
+\hline
+\textbf{Area} & \textbf{Contributors} & \textbf{Summary}\\
+\hline
+Software and coding & H.~Tekin, Y.~E.~Boyraz & Python vision pipeline, finite-state machine, serial communication, audio software, Arduino firmware, and calibration tools. HTTP audio streaming and smartphone-speaker mode after speaker driver failure. Edge AI and ONNX deployment.\\
+\hline
+Mechanical design and printing & Y.~B.~Demiry\"{u}rek, Y.~E.~Boyraz & 3D model preparation, printed body parts, and mechanical mounting support.\\
+\hline
+Electrical wiring and power & K.~\.{C}atalba\c{s} & Servo, laser, LED, ground, and power-distribution wiring and verification.\\
+\hline
+Material procurement & Y.~B.~Demiry\"{u}rek & Component sourcing in Kayseri and surrounding area.\\
+\hline
+Assembly and integration & All authors & Turret assembly, integration, troubleshooting, and demonstration preparation.\\
+\hline
+Report and documentation & K.~\.{C}atalba\c{s}, H.~Tekin & IEEE LaTeX report preparation, planning files, results structure, and documentation.\\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{thebibliography}{14}
 \bibitem{rpi5} Raspberry Pi Ltd., ``Raspberry Pi 5 Product Brief,'' 2023. [Online]. Available: https://www.raspberrypi.com/products/raspberry-pi-5/
 \bibitem{arduino_r4} Arduino, ``Arduino Uno R4 Documentation,'' 2023. [Online]. Available: https://docs.arduino.cc/hardware/uno-r4-minima
-\bibitem{ultralytics} G. Jocher \textit{et al.}, ``Ultralytics YOLO,'' 2024. [Online]. Available: https://github.com/ultralytics/ultralytics
+\bibitem{mg996r} Tower Pro, ``MG996R Servo Datasheet,'' product datasheet.
+
+\bibitem{yolo11} Joseph Redmon, S. Divvala, R. Girshick, and A. Farhadi, “You Only Look Once: Unified, Real-Time Object Detection,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR), Las Vegas, NV, USA, 2016, pp. 779–788.
+
+\bibitem{yolo11_2}Lazarevich, M. Grimaldi, R. Kumar, S. Mitra, S. Khan, and S. Sah, “YOLOBench: Benchmarking Efficient Object Detectors on Embedded Systems,” arXiv:2307.13901, 2023.
+
 \bibitem{onnxruntime} Microsoft, ``ONNX Runtime,'' [Online]. Available: https://onnxruntime.ai/
+
 \bibitem{picamera2} Raspberry Pi Ltd., ``Camera software documentation,'' [Online]. Available: https://www.raspberrypi.com/documentation/computers/camera\_software.html
+\bibitem{opencv} G. Bradski, ``The OpenCV Library,'' \textit{Dr. Dobb's Journal of Software Tools}, 2000.
+\bibitem{Lightweight_Edge_Devices} P. Mittal, “A Comprehensive Survey of Deep Learning-Based Lightweight Object Detection Models for Edge Devices,” Artificial Intelligence Review, vol. 57, no. 242, 2024.
+
+\bibitem{CNN_LLM_Deployment} K. Sun et al., “A Review of AI Edge Devices and Lightweight CNN and LLM Deployment,” Neurocomputing, vol. 620, 2025.
+
+\bibitem{edge_ai_in_practice} R. Cordova-Cardenas et al., “Edge AI in Practice: A Survey and Deployment Framework for Embedded Intelligence,” Electronics, vol. 14, no. 24, 2025
+
+\bibitem{Tiny_Machine} S. Heydari et al., “Tiny Machine Learning and On-Device Inference: A State-of-the-Art Review,” Sensors, vol. 25, 2025. Electronics, vol. 14, no. 24, 2025
+\bibitem{pan_tilt} D. Łoziński and M. Kozłowski, “Design and Evaluation of an Affordable and Reliable Pan-Tilt Tracking System,” Pomiary Automatyka Robotyka, vol. 29, no. 2, pp. 17–27, 2025. Electronics, vol. 14, no. 24, 2025
+\bibitem{pySerial} C. Liechti, “pySerial Documentation,” [Online]. Available: https://pythonhosted.org/pyserial/ Electronics, vol. 14, no. 24, 2025
+
+\bibitem{portal_valve} Valve Corporation, \textit{Portal}. Bellevue, WA, USA: Valve, 2007.
+
 \end{thebibliography}
 
 \end{document}

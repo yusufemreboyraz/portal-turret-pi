@@ -1,7 +1,7 @@
 # Experimental Results — Rapor kaynağı (Section V)
 
 **Durum:** Faz 0 tamamlandı (ölçüm altyapısı + rapor şablonu hazır).  
-**Sayısal sonuçlar:** Faz 3 — Pi üzerinde `measure_results.py` çalıştırılınca doldurulacak.  
+**Sayısal sonuçlar:** Gerçek Faz 3 Pi ölçümü henüz yok. Raporun mevcut sürümünde açıkça **preliminary engineering estimates** olarak etiketlenen tahmini metrikler kullanıldı; gerçek ölçüm alınırsa `measure_results.py` çıktılarıyla değiştirilecek.
 **Faz 1’e geçmeden önce:** Aşağıdaki “Hızlı ölçüm” adımlarını uygula veya en azından bir bench run yap.
 
 ---
@@ -14,6 +14,14 @@
 | Latency CSV | `plans/data/latency.csv` | Trial tablosu (ölçüm sonrası dolar) |
 | JSON özet | `plans/data/benchmark_run.json` | Son koşu metrikleri |
 | Grafik | `plans/tools/plot_latency.py` | → `ReportLatex/fig_latency.png` |
+
+Ek tahmini veri:
+
+| Varlık | Yol | Açıklama |
+|--------|-----|----------|
+| Estimate CSV | `plans/data/latency_estimate.csv` | Ölçüm yerine kullanılan preliminary latency seti |
+| Estimate grafik | `ReportLatex/fig_latency_estimate.png` | Raporda Fig. latency olarak kullanılan tahmini grafik |
+| Estimate üretici | `plans/tools/generate_latency_estimate.ps1` | CSV → PNG |
 
 ### Hızlı ölçüm (Pi 5)
 

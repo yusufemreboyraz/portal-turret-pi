@@ -50,18 +50,20 @@ Her bölüm bittiğinde: `\cite{}` yer tutucularını gerçek referanslarla değ
 
 ## Faz 2 — Şekiller ve tablolar
 
-- [ ] **Şekil 1:** Sistem blok diyagramı (Pi ↔ Arduino ↔ servolar) — `architecture.md` mermaid’i TikZ veya draw.io’dan export
-- [ ] **Şekil 2:** Durum makinesi — `methodology-control.md`
-- [ ] **Şekil 3:** Seri paket zaman çizelgesi — `methodology-communication.md`
-- [ ] **Şekil 4:** Latency grafiği — `results.md` (ölçüm sonrası CSV → pgfplots veya matplotlib → PNG)
-- [ ] **Tablo 1:** Donanım listesi — `project-summary.md`
-- [ ] **Tablo 2:** `config.yaml` zamanlayıcıları ve servo limitleri
+- [x] **Şekil 1:** Sistem blok diyagramı (Pi ↔ Arduino ↔ servolar) — `ReportLatex/fig_architecture.png`
+- [x] **Şekil 2:** Durum makinesi — `ReportLatex/fig_fsm.png`
+- [x] **Şekil 3:** Seri paket zaman çizelgesi — `ReportLatex/fig_serial.png`
+- [x] **Şekil 4:** Latency grafiği — `ReportLatex/fig_latency_estimate.png` (preliminary estimate; gerçek ölçüm değil)
+- [x] **Tablo 1:** Donanım listesi — `turret_report.tex` içinde Table~\ref{tab:hardware}
+- [x] **Tablo 2:** `config.yaml` zamanlayıcıları ve servo limitleri — `turret_report.tex` içinde Table~\ref{tab:config}
 
 ---
 
 ## Faz 3 — Deneyleri çalıştır (Results için zorunlu)
 
 `results.md` içindeki checklist’i uygula. Minimum:
+
+**Durum (2026-05-29):** Gerçek donanım testleri çalıştırılamadığı için `turret_report.tex` Section~V içinde preliminary engineering estimates kullanıldı. Gerçek bench çıktısı geldiğinde `plans/data/latency.csv`, `plans/data/benchmark_run.json` ve `ReportLatex/fig_latency_estimate.png` yerine ölçüm tabanlı grafik/metin güncellenmeli.
 
 1. **Latency:** hareket algısı → ilk servo komutu (ms), N≥20 ölçüm
 2. **Takip doğruluğu:** sabit mesafede X deneme, lazer/hedef hizası (piksel veya cm)
@@ -89,12 +91,14 @@ Mevcut makale stiline uy.
 
 ## Faz 5 — Son kontrol
 
-- [ ] Abstract kelime sayısı ~150 (IEEE genelde 150–250; ödev 150 istiyor)
-- [ ] Tüm `\ref{fig:...}` tanımlı
-- [ ] Ödev rubriği: Vision (ONNX edge AI), Control (FSM), Communication (paket), Results (grafik + accuracy), Discussion (güç, ses/Kayseri, ONNX)
-- [ ] Ekip: `\author{}` + isteğe bağlı Team Contributions (`team-and-contributions.md`)
-- [ ] `pdflatex` / `latexmk` ile derleme hatasız
-- [ ] Plagiarism: kod alıntıları kısa; Instructables sadece “eski mantık ilham” olarak geçsin (`README.md`)
+**Durum (2026-05-29):** Statik LaTeX kontrolleri tamamlandı. Yerel ortamda `pdflatex`, `latexmk`, `xelatex` veya `tectonic` bulunmadığı için PDF derlemesi çalıştırılamadı.
+
+- [x] Abstract kelime sayısı ~150 (146 kelime; IEEE genelde 150–250, ödev 150 istiyor)
+- [x] Tüm `\ref{fig:...}` tanımlı
+- [x] Ödev rubriği: Vision (ONNX edge AI), Control (FSM), Communication (paket), Results (grafik + accuracy), Discussion (güç, ses/Kayseri, ONNX)
+- [x] Ekip: `\author{}` + Team Contributions (`team-and-contributions.md`)
+- [ ] `pdflatex` / `latexmk` ile derleme hatasız — TeX motoru bu ortamda kurulu değil; statik ref/cite/görsel/brace kontrolleri temiz
+- [x] Plagiarism: kod alıntıları kısa; Instructables rapor metninde kaynak/kod alıntısı olarak kullanılmadı
 
 ---
 
