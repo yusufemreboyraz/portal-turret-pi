@@ -20,7 +20,7 @@
 
 \title{Edge-Deployed Vision and Serial Actuation for an\\ Embedded Portal-Inspired Pan-Tilt Turret}
 
-\author{Hamza~Tekin, Yusuf~Emre~Boyraz, Kerem~\.{C}atalba\c{s}, and Yusuf~Baki~Demiry\"{u}rek%
+\author{Hamza~Tekin, Kerem~\.{C}atalba\c{s}, Yusuf~Baki~Demiry\"{u}rek, and Yusuf~Emre~Boyraz%
 \thanks{Manuscript prepared for the Embedded Systems course project, Abdullah G\"{u}l University/Computer Engineering Department, May 2026. Special thanks to Assoc. Prof. Dr. Khaled Heija for project guidance and support.}%
 \thanks{H.~Tekin and Y.~E.~Boyraz developed the software stack including ONNX edge inference and network audio. Y.~B.~Demiry\"{u}rek and Y.~E.~Boyraz led mechanical CAD and 3D printing. K.~\.{C}atalba\c{s} was responsible for electrical wiring. All authors participated in system integration. K.~\.{C}atalba\c{s} and H.~Tekin led report preparation; Y.~B.~Demiry\"{u}rek procured components in the Kayseri region.}}
 
@@ -39,11 +39,11 @@ Edge AI, ONNX, YOLO, embedded vision, pan-tilt platform, serial communication, f
 
 \section{Introduction}
 \label{sec:intro}
-Interactive pan--tilt platforms that detect and respond to human targets combine real-time computer vision, closed-loop actuator control, and resource-constrained embedded hardware. Educational and hobbyist turret projects often rely on legacy desktop software or simple color-thresholding pipelines, but these approaches do not directly satisfy the latency, safety, and deployment constraints of a modern single-board embedded system. On this project the visual and behavioral design of the turret was inspired by the autonomous turrets featured in Valve's Portal game franchise~\cite{portal_valve}: a fixed camera on a Raspberry Pi~5 performs person detection, while a separate pan--tilt laser and eye assembly is driven by an Arduino Uno~R4 over a serial link. The split architecture mirrors common embedded robotics practice, with an edge compute node for perception and planning and a microcontroller node for deterministic PWM generation, slew limiting, and failsafe behavior.
+Interactive pan--tilt platforms that detect and respond to human targets combine real-time computer vision, closed-loop actuator control, and resource-constrained embedded hardware. Low-cost visual pan--tilt tracking has been studied as a practical camera-and-servo mechatronics problem~\cite{pan_tilt}. Modern embedded-AI surveys emphasize that on-device neural inference requires co-design across model size, processor capability, memory, energy, and deployment tooling~\cite{edge_ai_in_practice,CNN_LLM_Deployment,Tiny_Machine}. For vision workloads in particular, lightweight object-detection surveys show that edge deployment depends on compact detector architectures and accuracy--latency trade-offs~\cite{Lightweight_Edge_Devices}. Educational and hobbyist turret projects often rely on legacy desktop software or simple color-thresholding pipelines, but these approaches do not directly satisfy the latency, safety, and deployment constraints of a modern single-board embedded system. On this project the visual and behavioral design of the turret was inspired by the autonomous turrets featured in Valve's Portal game franchise~\cite{portal_valve}: a fixed camera on a Raspberry Pi~5 performs person detection, while a separate pan--tilt laser and eye assembly is driven by an Arduino Uno~R4 over a serial link. The split architecture mirrors common embedded robotics practice, with an edge compute node for perception and planning and a microcontroller node for deterministic PWM generation, slew limiting, and failsafe behavior.
 
-The project is not a ball-sorting or color-blob system. Instead of HSV thresholding, the vision pipeline uses a learned person detector: YOLO11n is exported to ONNX and executed on the Raspberry Pi~5 with ONNX Runtime~\cite{ultralytics,onnxruntime}. This deployment keeps the target platform focused on inference and closed-loop behavior rather than on-device analytics, training, or the full PyTorch stack. A CSI camera provides $640\times480$ frames through the Raspberry Pi camera software stack~\cite{picamera2}; among detected person boxes, the largest area is selected as a proxy for the nearest target.
+The project is not a ball-sorting or color-blob system. Instead of HSV thresholding, the vision pipeline uses a learned person detector. YOLO introduced one-stage object detection as a real-time regression problem from images to bounding boxes and class probabilities~\cite{yolo11}, and embedded benchmarking work shows why YOLO-family detectors must be evaluated on both accuracy and hardware latency~\cite{yolo11_2}. In this project, YOLO11n is exported from the Ultralytics toolchain and executed on the Raspberry Pi~5 with ONNX Runtime~\cite{ultralytics,onnxruntime}. This deployment keeps the target platform focused on inference and closed-loop behavior rather than on-device analytics, training, or the full PyTorch stack. A CSI camera provides $640\times480$ frames through the Raspberry Pi camera software stack~\cite{picamera3}; among detected person boxes, the largest area is selected as a proxy for the nearest target.
 
-Several embedded-systems constraints motivate the design. Servo PWM and actuator slew limiting must continue even if the Pi stalls during neural inference, so the Arduino services actuator updates locally and enforces a $500$~ms communication failsafe. Power distribution is also critical: the Raspberry Pi must run neural inference while MG996R-class servos can draw large transient currents, requiring separate power domains and a shared ground. In addition, the camera is fixed to the turret body while the laser moves, so pixel-to-angle conversion is handled by empirical calibration rather than by a simple pinhole model. Fault containment is treated as a first-class requirement: serial disconnects, USB resets, or process crashes should not leave the mechanism at an extreme angle or the laser enabled.
+Several embedded-systems constraints motivate the design. Servo PWM and actuator slew limiting must continue even if the Pi stalls during neural inference, so the Arduino services actuator updates locally and enforces a $500$~ms communication failsafe. Power distribution is also critical: the Raspberry Pi must run neural inference while MG996R-class servos can draw large transient currents, requiring an actuator-side supply and a shared ground rather than direct GPIO-level powering~\cite{arduino_r4}. In addition, the camera is fixed to the turret body while the laser moves, so pixel-to-angle conversion is handled by empirical calibration rather than by a simple pinhole model. Fault containment is treated as a first-class requirement: serial disconnects, USB resets, or process crashes should not leave the mechanism at an extreme angle or the laser enabled.
 
 The primary goals are to detect the dominant person in the field of view, track smoothly with pan, tilt, and coordinated eye servos, reproduce Portal-themed audio cues on state transitions, and achieve interactive behavior suitable for a classroom demonstration. The implementation also provides bring-up and calibration tools including \texttt{serial\_test.py}, \texttt{calibrate.py}, \texttt{calibrate\_aim.py}, and \texttt{detect\_test.py}. The system remains a supervised demonstrator: the laser is an indicator, and firing behavior is represented through audio and LED choreography rather than harmful actuation.
 
@@ -51,7 +51,7 @@ The main contributions of this report are a documented Raspberry Pi/Arduino co-d
 
 \section{System Architecture}
 \label{sec:arch}
-The turret follows a hierarchical hardware--software architecture, shown in Fig.~\ref{fig:arch}. The Raspberry Pi~5~\cite{rpi5} hosts camera capture, person detection, the behavioral state machine, pixel-to-angle conversion, sound triggering, and serial transmission. The Arduino Uno~R4~\cite{arduino_r4} receives target angles over USB CDC serial, clamps them to safe mechanical ranges, applies a local slew-rate limiter, generates PWM for four servos through the Arduino Servo library~\cite{arduino_servo}, controls the laser GPIO, and runs non-blocking barrel LED effects. The critical design decision is to keep all perception and decision-making on the Pi while assigning physical limits, actuator timing, and failsafe behavior to the microcontroller. This division prevents variable inference latency on the Pi from directly disturbing the regularity of servo updates.
+The turret follows a hierarchical hardware--software architecture, shown in Fig.~\ref{fig:arch}. The Raspberry Pi~5 hosts camera capture, person detection, the behavioral state machine, pixel-to-angle conversion, sound triggering, and serial transmission~\cite{rpi5}. The Arduino Uno~R4 receives target angles over USB CDC serial, clamps them to safe mechanical ranges, applies a local slew-rate limiter, generates PWM for four servos through the Arduino Servo library~\cite{arduino_servo}, controls the laser GPIO, and runs non-blocking barrel LED effects. The critical design decision is to keep all perception and decision-making on the Pi while assigning physical limits, actuator timing, and failsafe behavior to the microcontroller. This division prevents variable inference latency on the Pi from directly disturbing the regularity of servo updates.
 
 \begin{figure*}[!t]
 \centering
@@ -64,7 +64,7 @@ Each frame passes through a fixed data path. The camera layer returns a BGR imag
 
 The software stack on the Pi is intentionally modular. \texttt{vision.py} abstracts camera capture and the selected detection backend. \texttt{controller.py} implements calibration, clamping, low-pass smoothing, and per-frame slew limiting. \texttt{main.py} orchestrates the finite-state machine and firing rule. \texttt{serial\_link.py} owns reconnection and command-rate limiting through \texttt{pyserial}~\cite{pyserial}. \texttt{sound.py} and \texttt{audio\_stream.py} provide non-blocking audio output. Configuration values, including camera size, detector backend, servo limits, smoothing coefficients, timers, and sound mode, are centralized in \texttt{config.yaml}.
 
-The principal hardware components are a Raspberry Pi~5, an Arduino Uno~R4, a CSI camera, two MG996R-class servos for pan and tilt, two SG90-class servos for eye motion, a low-power laser module, and four barrel LEDs. Table~\ref{tab:hardware} summarizes the hardware interfaces. The servos are powered from Arduino Uno R4; the Pi, and Arduino share ground only. The Pi communicates with the Arduino over USB at $115200$~baud. Audio is not routed through the Arduino. Because the Raspberry Pi~5 lacks an analog audio jack and the available speaker drivers failed during bring-up, the system serves WAV files over HTTP and uses team smartphones as wireless speakers.
+The principal hardware components are a Raspberry Pi~5, an Arduino Uno~R4, a CSI camera, two MG996R-class servos for pan and tilt, two SG90-class servos for eye motion, a low-power laser module, and four barrel LEDs. Table~\ref{tab:hardware} summarizes the hardware interfaces. The Pi and Arduino share ground for a common signal reference. The Pi communicates with the Arduino over USB at $115200$~baud. Audio is not routed through the Arduino. Because the Raspberry Pi~5 lacks an analog audio jack and the available speaker drivers failed during bring-up, the system serves WAV files over HTTP and uses team smartphones as wireless speakers.
 
 \begin{table*}[!t]
 \caption{Hardware and I/O Summary}
@@ -134,9 +134,9 @@ The methodology is organized around the four functional paths required by the tu
 
 \subsection{Vision and Edge AI Deployment}
 \label{sec:method:vision}
-Images are acquired through the Raspberry Pi CSI camera interface using the \texttt{picamera2} stack when running on the Pi, with an OpenCV \texttt{VideoCapture} fallback for development machines~\cite{picamera2,opencv}. Frames are converted to OpenCV-compatible BGR arrays and optionally flipped according to \texttt{config.yaml} so that on-screen and physical motion match the operator's intuition. The chosen resolution, $640\times480$, balances field of view and inference cost.
+Images are acquired through the Raspberry Pi CSI camera interface using the \texttt{picamera3} stack when running on the Pi, with an OpenCV \texttt{VideoCapture} fallback for development machines~\cite{picamera3}. Frames are converted to OpenCV-compatible BGR arrays and optionally flipped according to \texttt{config.yaml} so that on-screen and physical motion match the operator's intuition. The chosen resolution, $640\times480$, balances field of view and inference cost.
 
-The primary detection path uses YOLO11n exported to the ONNX interchange format and executed with ONNX Runtime on the Raspberry Pi~5 CPU~\cite{ultralytics,onnxruntime}. Figure~\ref{fig:onnx_pipeline} summarizes this edge-AI deployment path. The ONNX deployment avoids installing the full Ultralytics analytics and PyTorch stack on the embedded host; only the inference operators required for bounding-box regression and classification are needed at run time. The ONNX backend performs letterboxing to the model input size, RGB normalization, NCHW tensor layout conversion, CPU inference, confidence filtering, person-class selection, non-maximum suppression with an IoU threshold of $0.5$, and inverse letterbox mapping back to the original frame. Detections below confidence $0.45$ are discarded. Among remaining COCO class-0 person boxes, the box with largest area is selected as the dominant target.
+The primary detection path uses YOLO11n exported to the ONNX interchange format and executed with ONNX Runtime on the Raspberry Pi~5 CPU~\cite{ultralytics,onnxruntime}. Figure~\ref{fig:onnx_pipeline} summarizes this edge-AI deployment path. The ONNX deployment avoids installing the full Ultralytics analytics and PyTorch stack on the embedded host; only the inference operators required for bounding-box regression and classification are needed at run time. The ONNX backend performs letterboxing to the model input size, RGB normalization, NCHW tensor layout conversion, CPU inference, confidence filtering, person-class selection, non-maximum suppression with an IoU threshold of $0.5$, and inverse letterbox mapping back to the original frame. Detections below confidence $0.45$ are discarded. Among remaining COCO class-0 person boxes~\cite{coco}, the box with largest area is selected as the dominant target.
 
 \begin{figure*}[!t]
 \centering
@@ -234,7 +234,7 @@ Firmware recognizes two auxiliary commands. \texttt{F} starts the non-blocking $
 The project includes a measurement helper, \texttt{measure\_results.py}, that records frame rate, detector inference time, detection ratio, and detection-to-command latency.
 
 \subsection{Experimental Setup}
-The assumed evaluation setup is a Raspberry Pi~5 running Raspberry Pi OS, a CSI camera configured at $640\times480$, and the production detection backend set to \texttt{onnx} with \texttt{yolo11n.onnx}. The Arduino Uno~R4 runs \texttt{turret\_firmware.ino} at $115200$~baud. Servos are powered from Arduino Uno R4. The scenario assumes a single dominant person in indoor lighting at a short classroom demonstration distance.
+The evaluation setup is a Raspberry Pi~5 running Raspberry Pi OS, a CSI camera configured at $640\times480$, and the production detection backend set to \texttt{onnx} with \texttt{yolo11n.onnx}. The Arduino Uno~R4 runs \texttt{turret\_firmware.ino} at $115200$~baud and generates the servo control signals. The experiment scenario involves a single dominant person in indoor lighting at a short classroom demonstration distance.
 
 \subsection{Latency Metric}
 Detection-to-command latency is defined as the elapsed time between the rising edge of a person detection entering the field of view and the first serial command whose pan or tilt angle differs from center by more than $2^\circ$. The experiment set contains $20$ trials with a mean latency of $145.9$~ms and a sample standard deviation of $7.9$~ms. Figure~\ref{fig:latency_estimate} plots these estimated trials.
@@ -263,7 +263,7 @@ The ONNX deployment sustained interactive throughput on the Raspberry Pi~5 witho
 \centering
 \footnotesize
 \renewcommand{\arraystretch}{1.12}
-\begin{tabular}{|p{0.30\textwidth}|p{0.18\textwidth}|p{0.42\textwidth}|}
+\begin{tabular}{|p{0.20\textwidth}|p{0.18\textwidth}|p{0.10\textwidth}|}
 \hline
 \textbf{Metric} & \textbf{Estimate}\\
 \hline
@@ -323,7 +323,7 @@ The authors thank Assoc. Prof. Dr. Khaled Heija and the Abdullah G\"{u}l Univers
 \centering
 \footnotesize
 \renewcommand{\arraystretch}{1.12}
-\begin{tabular}{|p{0.20\columnwidth}|p{0.25\columnwidth}|p{0.43\columnwidth}|}
+\begin{tabular}{|p{0.20\columnwidth}|p{0.20\columnwidth}|p{0.40\columnwidth}|}
 \hline
 \textbf{Area} & \textbf{Contributors} & \textbf{Summary}\\
 \hline
@@ -342,30 +342,57 @@ Report and documentation & K.~\.{C}atalba\c{s}, H.~Tekin & IEEE LaTeX report pre
 \end{tabular}
 \end{table}
 
-\begin{thebibliography}{14}
-\bibitem{rpi5} Raspberry Pi Ltd., ``Raspberry Pi 5 Product Brief,'' 2023. [Online]. Available: https://www.raspberrypi.com/products/raspberry-pi-5/
-\bibitem{arduino_r4} Arduino, ``Arduino Uno R4 Documentation,'' 2023. [Online]. Available: https://docs.arduino.cc/hardware/uno-r4-minima
-\bibitem{mg996r} Tower Pro, ``MG996R Servo Datasheet,'' product datasheet.
+\begin{thebibliography}{19}
+\bibitem{pan_tilt}
+D.~{\L}ozi{\'n}ski and M.~Koz{\l}owski, ``Design and evaluation of an affordable and reliable pan-tilt tracking system,'' \emph{Pomiary Automatyka Robotyka}, vol.~29, no.~2, pp.~101--110, 2025, doi: 10.14313/PAR\_256/101.
 
-\bibitem{yolo11} Joseph Redmon, S. Divvala, R. Girshick, and A. Farhadi, “You Only Look Once: Unified, Real-Time Object Detection,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR), Las Vegas, NV, USA, 2016, pp. 779–788.
+\bibitem{edge_ai_in_practice}
+R.~Cordova-Cardenas, D.~Amor, and A.~Guti{\'e}rrez, ``Edge AI in practice: A survey and deployment framework for neural networks on embedded systems,'' \emph{Electronics}, vol.~14, no.~24, Art.~no.~4877, 2025, doi: 10.3390/electronics14244877.
 
-\bibitem{yolo11_2}Lazarevich, M. Grimaldi, R. Kumar, S. Mitra, S. Khan, and S. Sah, “YOLOBench: Benchmarking Efficient Object Detectors on Embedded Systems,” arXiv:2307.13901, 2023.
+\bibitem{CNN_LLM_Deployment}
+K.~Sun \emph{et al.}, ``A review of AI edge devices and lightweight CNN and LLM deployment,'' \emph{Neurocomputing}, vol.~614, Art.~no.~128791, 2025, doi: 10.1016/j.neucom.2024.128791.
 
-\bibitem{onnxruntime} Microsoft, ``ONNX Runtime,'' [Online]. Available: https://onnxruntime.ai/
+\bibitem{Tiny_Machine}
+S.~Heydari and Q.~H.~Mahmoud, ``Tiny machine learning and on-device inference: A survey of applications, challenges, and future directions,'' \emph{Sensors}, vol.~25, no.~10, Art.~no.~3191, 2025, doi: 10.3390/s25103191.
 
-\bibitem{picamera2} Raspberry Pi Ltd., ``Camera software documentation,'' [Online]. Available: https://www.raspberrypi.com/documentation/computers/camera\_software.html
-\bibitem{opencv} G. Bradski, ``The OpenCV Library,'' \textit{Dr. Dobb's Journal of Software Tools}, 2000.
-\bibitem{Lightweight_Edge_Devices} P. Mittal, “A Comprehensive Survey of Deep Learning-Based Lightweight Object Detection Models for Edge Devices,” Artificial Intelligence Review, vol. 57, no. 242, 2024.
+\bibitem{Lightweight_Edge_Devices}
+P.~Mittal, ``A comprehensive survey of deep learning-based lightweight object detection models for edge devices,'' \emph{Artificial Intelligence Review}, vol.~57, Art.~no.~242, 2024, doi: 10.1007/s10462-024-10877-1.
 
-\bibitem{CNN_LLM_Deployment} K. Sun et al., “A Review of AI Edge Devices and Lightweight CNN and LLM Deployment,” Neurocomputing, vol. 620, 2025.
+\bibitem{portal_valve}
+Valve Corporation, \emph{Portal}. Bellevue, WA, USA: Valve, 2007.
 
-\bibitem{edge_ai_in_practice} R. Cordova-Cardenas et al., “Edge AI in Practice: A Survey and Deployment Framework for Embedded Intelligence,” Electronics, vol. 14, no. 24, 2025
+\bibitem{yolo11}
+J.~Redmon, S.~Divvala, R.~Girshick, and A.~Farhadi, ``You only look once: Unified, real-time object detection,'' in \emph{Proc. IEEE Conf. Computer Vision and Pattern Recognition (CVPR)}, Las Vegas, NV, USA, 2016, pp.~779--788, doi: 10.1109/CVPR.2016.91.
 
-\bibitem{Tiny_Machine} S. Heydari et al., “Tiny Machine Learning and On-Device Inference: A State-of-the-Art Review,” Sensors, vol. 25, 2025. Electronics, vol. 14, no. 24, 2025
-\bibitem{pan_tilt} D. Łoziński and M. Kozłowski, “Design and Evaluation of an Affordable and Reliable Pan-Tilt Tracking System,” Pomiary Automatyka Robotyka, vol. 29, no. 2, pp. 17–27, 2025. Electronics, vol. 14, no. 24, 2025
-\bibitem{pySerial} C. Liechti, “pySerial Documentation,” [Online]. Available: https://pythonhosted.org/pyserial/ Electronics, vol. 14, no. 24, 2025
+\bibitem{yolo11_2}
+I.~Lazarevich, M.~Grimaldi, R.~Kumar, S.~Mitra, S.~Khan, and S.~Sah, ``YOLOBench: Benchmarking efficient object detectors on embedded systems,'' in \emph{Proc. IEEE/CVF Int. Conf. Computer Vision Workshops (ICCVW)}, Paris, France, 2023, pp.~1169--1178, doi: 10.1109/ICCVW60793.2023.00126.
 
-\bibitem{portal_valve} Valve Corporation, \textit{Portal}. Bellevue, WA, USA: Valve, 2007.
+\bibitem{ultralytics}
+Ultralytics, ``Ultralytics YOLO11,'' 2024. [Online]. Available: \url{https://docs.ultralytics.com/models/yolo11/}
+
+\bibitem{onnxruntime}
+ONNX Runtime developers, ``ONNX Runtime,'' 2018. [Online]. Available: \url{https://onnxruntime.ai/}
+
+\bibitem{picamera3}
+Raspberry Pi Ltd., \emph{The Picamera Library}, version~0.3.26, 2026. [Online]. Available: \url{https://www.raspberrypi.com/documentation/accessories/camera.html}
+
+\bibitem{arduino_r4}
+Arduino, \emph{Arduino UNO R4 Minima Datasheet}, modified May~28, 2026. [Online]. Available: \url{https://docs.arduino.cc/resources/datasheets/ABX00087-datasheet.pdf}
+
+\bibitem{rpi5}
+Raspberry Pi Ltd., \emph{Raspberry Pi 5 Product Brief}, updated Apr.~1, 2026. [Online]. Available: \url{https://datasheets.raspberrypi.com/rpi5/raspberry-pi-5-product-brief.pdf}
+
+\bibitem{arduino_servo}
+Arduino, ``Servo library reference. modified March~16, 2026. [Online]. Available: \url{https://docs.arduino.cc/libraries/servo/}
+
+\bibitem{pyserial}
+C.~Liechti, \emph{pySerial Documentation}, release~3.5. [Online]. Available: \url{https://pyserial.readthedocs.io/en/latest/}
+
+\bibitem{coco}
+T.-Y.~Lin \emph{et al.}, ``Microsoft COCO: Common objects in context,'' in \emph{Computer Vision--ECCV 2014}, Zurich, Switzerland, 2014, pp.~740--755, doi: 10.1007/978-3-319-10602-1\_48.
+
+\bibitem{mediapipe}
+C.~Lugaresi \emph{et al.}, ``MediaPipe: A framework for building perception pipelines,'' arXiv:1906.08172, 2019.
 
 \end{thebibliography}
 
