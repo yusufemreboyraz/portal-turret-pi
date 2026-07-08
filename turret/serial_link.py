@@ -7,12 +7,31 @@ komut göndermek hiçbir zaman ana döngüyü bloklamaz.
 
 from __future__ import annotations
 
+import glob
+import os
 import time
 
 try:
     import serial  # pyserial
 except ImportError:  # pragma: no cover - bağımlılık eksikse anlamlı hata
     serial = None
+
+
+# Mac + Linux için yaygın Arduino seri port desenleri (sırayla denenir).
+_PORT_PATTERNS = [
+    "/dev/cu.usbmodem*",    # macOS Arduino
+    "/dev/cu.usbserial*",   # macOS FTDI/CH340
+    "/dev/ttyACM*",         # Linux Arduino native CDC
+    "/dev/ttyUSB*",         # Linux FTDI/CH340
+]
+
+
+def _autodetect_port() -> str | None:
+    for pat in _PORT_PATTERNS:
+        matches = sorted(glob.glob(pat))
+        if matches:
+            return matches[0]
+    return None
 
 
 class SerialLink:
@@ -36,11 +55,21 @@ class SerialLink:
         if now - self._last_attempt < self.reconnect_delay_s:
             return False
         self._last_attempt = now
+
+        # Yapılandırılan port yoksa otomatik keşif (Mac/Linux arası taşıma kolaylığı).
+        port = self.port
+        if not os.path.exists(port):
+            found = _autodetect_port()
+            if found is not None:
+                print(f"[serial] '{port}' yok; otomatik: {found}")
+                port = found
+                self.port = found  # bir sonraki denemede aynı portu kullan
+
         try:
-            self._ser = serial.Serial(self.port, self.baud, timeout=0.05)
+            self._ser = serial.Serial(port, self.baud, timeout=0.05)
             time.sleep(2.0)  # Arduino reset sonrası bootloader bekleme
             self._ser.reset_input_buffer()
-            print(f"[serial] bağlandı: {self.port} @ {self.baud}")
+            print(f"[serial] bağlandı: {port} @ {self.baud}")
             return True
         except (serial.SerialException, OSError) as e:
             print(f"[serial] bağlanılamadı ({e}); {self.reconnect_delay_s}s sonra tekrar")

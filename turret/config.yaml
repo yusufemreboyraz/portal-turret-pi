@@ -23,12 +23,13 @@ detection:
   use_ncnn: true          # sadece backend=yolo iken etkili (NCNN export)
   conf: 0.45              # minimum güven
   person_class_id: 0      # COCO 'person'
-  aim_y_offset_ratio: -0.2  # nişan noktası: 0=tam merkez, -0.2=merkezden %20 yukarı (göğüs)
+  aim_y_offset_ratio: -0.20 # nişan noktası: 0=tam merkez, -0.20=göğüs (görselleştirme için)
                             # -0.35 ≈ baş/omuz, 0 = göbek/merkez. Pozitif değer aşağı.
   # Lazer ↔ kamera paralaks düzeltmesi (calibrate_aim.py yazar).
-  # Birim: piksel. +x sağa, +y aşağı.
+  # Birim: piksel. +x sağa, +y aşağı. Lazer fiziksel olarak nereye düşüyorsa
+  # ona göre tunable — sarı artıyı değil, kırmızı lazer noktasını izle.
   aim_pixel_offset_x: 0
-  aim_pixel_offset_y: 0
+  aim_pixel_offset_y: -100
   # En büyük (en yakın) insan hedef seçilir.
 
 servos:
@@ -86,7 +87,7 @@ sounds:
   #              (Pi 5'te ses kartı yoksa ÖNERİLEN)
   #   pygame  -> yerel pygame.mixer (Mac/ses kartı olan Linux)
   #   aplay   -> ALSA aplay subprocess
-  mode: network
+  mode: pygame
   network:
     host: 0.0.0.0
     port: 8765
@@ -96,5 +97,5 @@ sounds:
   lost:   [TargetLost/AreYouStillThere.wav, TargetLost/TargetLost.wav]
 
 debug:
-  show_window: false       # Mac demosunda tespit penceresini gör (Pi headless'te false yap)
+  show_window: true        # Mac demosunda tespit penceresini gör (Pi headless'te false yap)
   print_fps: true
