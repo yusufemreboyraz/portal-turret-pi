@@ -1,105 +1,232 @@
-# Portal Turret — Raspberry Pi 5 + Arduino Uno R4
+# Portal Turret
 
-Pan-tilt turret: Pi 5 kameradan insanı tespit eder, tareti ona yönlendirir,
-lazer sürekli yanık, ateş yerine hoparlörden Portal ses replikleri çalar.
+An autonomous pan-tilt turret, inspired by the sentry turrets in Valve's
+*Portal*, built from a Raspberry Pi 5 and an Arduino Uno R4. The Pi handles
+camera-based person detection and decision-making; the Arduino drives the
+servos and laser over a serial link. This was built as a term project for an
+embedded/robotics course.
 
-- **Pi 5 (8GB):** görüntü işleme (picamera2 + YOLO), durum makinesi, ses, Arduino'ya komut
-- **Arduino Uno R4:** 4 servo + lazer kontrolü, slew-rate limit, failsafe
-- **Servolar:** 2× MG996R (silah pan/tilt), 2× SG90-sınıfı (göz)
+## What it does
+
+A CSI camera on the Pi continuously scans for people using an object
+detector. When a person is found, a finite-state machine tracks them,
+aims a mounted laser pointer at the target, and plays back Portal turret
+voice lines through a speaker. If the detected person's bounding box grows
+large enough (i.e., they are close to the turret), the system triggers a
+"fire" sequence consisting of a sound cue and an LED light show at the
+barrel. No live ammunition or projectiles are involved.
+
+State machine (`turret/main.py`):
+
+- `SEARCHING` — no target; turret stays centered (or idle-scans, if enabled),
+  laser on.
+- `TARGET_ACQUIRED` — a person is detected; if they remain visible for
+  `found_ms`, transitions to `TRACKING` and plays a "found" sound.
+- `TRACKING` — actively following the target; if the bounding box covers
+  enough of the frame, plays a "lock" sound and triggers the fire sequence.
+- `TARGET_LOST` — target disappeared; after `lost_ms` without reacquiring,
+  plays a "lost" sound and returns to `SEARCHING`. If the target reappears
+  within `reacquire_ms`, goes back to `TRACKING` instead.
+
+## Architecture
 
 ```
-turret/   -> Pi tarafı (Python)
-arduino/  -> Arduino firmware (.ino)
+[CSI Camera] -> [Raspberry Pi 5] --USB serial--> [Arduino Uno R4] --PWM--> 4x Servo
+                       |                                |  pan / tilt (barrel)
+                [Audio output]                          |  eye X / eye Y
+                                                         +- laser (digital on/off)
+                                                         +- 4x barrel LEDs
 ```
 
-## 1. Donanım & kablolama
+All perception and decision-making happens on the Pi; the Arduino only
+executes the angles it is told to, and independently enforces safety limits.
 
-```
-[Pi Kamera CSI] → [Raspberry Pi 5] ──USB seri──> [Arduino Uno R4] ──PWM──> 4× Servo
-                          │                              │  pin 9=pan 10=tilt
-                   [USB ses kartı]                       │  pin 5=eyeX 6=eyeY
-                          │                              └─ pin 7 = lazer (sürekli)
-                   [PAM8403 amfi] → [8Ω 1W hoparlör]
-```
+Software layers on the Pi (`turret/`):
 
-Arduino pin haritası `arduino/turret_firmware/turret_firmware.ino` içinde.
+| Layer | Module | Responsibility |
+|---|---|---|
+| Perception | `vision.py` | Camera capture + person detection, returns the largest detected person as a target |
+| Planning | `main.py` | State machine, aim-point offset, fire trigger |
+| Control | `controller.py` | Converts a target pixel into pan/tilt/eye servo angles, applies calibration, low-pass smoothing, and per-frame step limiting |
+| Communication | `serial_link.py` | Sends servo commands to the Arduino over USB serial, with auto-reconnect and auto port detection |
+| Audio | `sound.py`, `audio_stream.py` | Plays sound effects locally (pygame/aplay) or streams them to a phone browser over HTTP |
 
-### Güç (EN KRİTİK — yanlışı kart yakar)
-- **Pi 5:** prizden, resmi **27W USB-C PD** adaptör. (1S 3.7V 3000mAh batarya
-  Pi 5 + YOLO için yetersiz, kullanma.)
-- **Servolar:** AYRI **5-6V regüleli kaynak, ≥6A** (2× MG996R stall ~4A).
-  Servo V+ KESİNLİKLE Arduino 5V pininden çekilmez.
-- **Ortak GND zorunlu:** servo kaynağı GND ↔ Arduino GND. (Pi, USB ile zaten ortak.)
-- **Lazer:** sürekli yanık; modül 5V hattına (gerekirse seri direnç).
-- **Ses:** Pi 5'te 3.5mm jak YOK. USB ses kartı → PAM8403 → 8Ω hoparlör.
-  *Alternatif (tek modül): MAX98357A I2S amfi doğrudan GPIO'dan 8Ω sürer.*
+Serial protocol: a single ASCII line per command,
+`T,<pan>,<tilt>,<eyeX>,<eyeY>,<laser>\n`, sent at up to `serial.command_hz`
+(30 Hz by default). A separate one-character command (`F`) triggers the LED
+fire choreography, and `L,<0|1>` toggles whether the firmware clamps angles
+to their configured mechanical limits.
 
-## 2. Arduino kurulumu
+On the Arduino side (`arduino/turret_firmware/turret_firmware.ino`), incoming
+target angles are rate-limited (slew limiting) before being written to the
+servos, and a failsafe returns all servos to center and turns off the laser
+if no command is received for a configurable timeout. This means transient
+delays in Pi-side inference do not translate into erratic or unsafe servo
+motion.
 
-1. Arduino IDE'de **Renesas Arduino Uno R4** kart paketini kur.
-2. `arduino/turret_firmware/turret_firmware.ino` dosyasını yükle.
-3. Servoları ayrı güçten besle, Arduino'yu Pi'ye USB ile bağla.
+### Safety
 
-## 3. Raspberry Pi kurulumu
+- Arduino-side slew-rate limiting smooths raw commands before they reach the servos.
+- Arduino-side failsafe centers all servos and disables the laser if the serial link goes quiet.
+- Arduino-side clamping keeps commanded angles within configured mechanical limits (enabled by `main.py` at startup, disabled only by `serial_test.py` for manual limit-finding).
+- On shutdown, the Pi explicitly sends a center position with the laser off before closing the serial connection.
 
-Raspberry Pi OS **Bookworm 64-bit**:
+## Detection backends
+
+Person detection is pluggable via `detection.backend` in `config.yaml`:
+
+- `onnx` (recommended for the Raspberry Pi) — a YOLO11n model exported to
+  ONNX and run with ONNX Runtime. This avoids installing the full
+  Ultralytics/PyTorch stack on the Pi; only inference is needed on-device.
+  See `plans/edge-ai-onnx-deployment.md` for the rationale and export
+  pipeline.
+- `yolo` — Ultralytics YOLO with a `.pt` checkpoint, useful for fast
+  iteration on a development machine (e.g., a Mac); optionally exported to
+  NCNN for a faster CPU path.
+- `mediapipe` — a lighter-weight fallback using MediaPipe pose detection.
+
+If no camera hardware is available, `vision.Camera` falls back to a USB
+webcam via OpenCV, which is useful for development off the target hardware.
+
+## Hardware
+
+| Component | Notes |
+|---|---|
+| Computer | Raspberry Pi 5 (8 GB recommended) |
+| Microcontroller | Arduino Uno R4 |
+| Camera | Pi CSI camera module (`picamera2`) |
+| Pan/tilt servos | 2x MG996R |
+| Eye servos | 2x SG90-class |
+| Laser | Digital pin, continuous-on mode |
+| Barrel LEDs | 4x, for the fire choreography |
+| Audio | USB sound card + amplifier, or network streaming to a phone as a fallback |
+| Link | USB serial, 115200 baud |
+
+Power is the most safety-critical part of the build:
+
+- The Pi must be powered from a proper 27 W USB-C PD supply; a small battery
+  is not sufficient for the Pi 5 plus a running detection model.
+- Servos require their own regulated 5-6 V supply rated for several amps
+  (stall current on the MG996R units is roughly 4 A each); they must not be
+  powered from the Arduino's 5V pin.
+- The servo supply ground and the Arduino ground must be tied together.
+- The Pi has no headphone jack; audio requires a USB sound card driving an
+  amplifier and speaker, or the network-streaming fallback in
+  `audio_stream.py`.
+
+## Software setup (Raspberry Pi OS Bookworm, 64-bit)
 
 ```bash
 sudo apt update
 sudo apt install -y python3-picamera2 python3-opencv
 cd turret
-python3 -m venv --system-site-packages venv   # picamera2 sistemden gelsin
+python3 -m venv --system-site-packages venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Kamerayı etkinleştir (`raspi-config` → Interface → Camera) ve test et:
-`libcamera-hello`.
+Dependencies are listed in `turret/requirements.txt`: `pyyaml`, `pyserial`,
+`numpy`, `opencv-python`, `ultralytics` (development backend only),
+`pygame` (audio). `onnxruntime` is required for the recommended `onnx`
+backend and should be installed separately on the Pi.
 
-**Ses çıkışını USB karta yönlendir:** `aplay -l` ile kart no'sunu bul,
-`~/.asoundrc` veya `raspi-config` Audio'dan varsayılan yap. Test: `speaker-test -c2`.
+Enable the camera (`raspi-config` -> Interface -> Camera) and confirm it
+works with `libcamera-hello`. If using a USB sound card, select it as the
+default output (`raspi-config` -> Audio, or a manual `~/.asoundrc`) and
+verify with `speaker-test`. Find the Arduino's serial device with
+`ls /dev/ttyACM*` and set it in `turret/config.yaml` under `serial.port`
+(auto-detection is also attempted at runtime if the configured port does
+not exist).
 
-**Seri port:** `ls /dev/ttyACM*` → `config.yaml` `serial.port` değerini güncelle.
+## Arduino setup
 
-## 4. Bring-up sırası (plan adımları)
+1. Install the Renesas Uno R4 board package in the Arduino IDE.
+2. Flash `arduino/turret_firmware/turret_firmware.ino`.
+3. Power the servos from their dedicated supply and connect the Arduino to
+   the Pi over USB.
+
+## Running and calibrating
+
+Recommended bring-up order:
 
 ```bash
-# 4a. Arduino izole testi — servolar hareket ediyor mu?
-python3 serial_test.py 90 90 90 90 1     # hepsi merkez + lazer
-python3 serial_test.py sweep             # pan mekanik süpürme
-#  -> komut kesilince ~500ms sonra servolar merkeze dönmeli (failsafe)
+# 1. Verify servo motion and failsafe with the Arduino alone
+python3 serial_test.py 90 90 90 90 1     # all centered, laser on
+python3 serial_test.py sweep             # mechanical pan sweep
+#    -> servos should return to center ~500ms after commands stop
 
-# 4b. Kamera + tespit + FPS
-#  config.yaml debug.show_window: true (masaüstü/VNC ile)
-python3 main.py                          # insan kutulanmalı, FPS >= 15 hedef
+# 2. Verify camera + detection (set debug.show_window: true in config.yaml)
+python3 main.py                          # a detected person should be boxed, FPS >= 15
 
-# 4c. Kalibrasyon (kamera sabit, silah hareketli -> şart)
+# 3. Calibrate pixel-to-angle mapping (camera fixed, turret body moves)
 python3 calibrate.py
-#  servoları klavyeyle oynat, lazeri bir noktaya getir, o noktaya tıkla;
-#  uçlardan 2+ nokta topla, 'S' ile config.yaml'a yaz
+#    jog the servos with the keyboard, point the laser at a spot, click that
+#    spot on the video feed; collect 2+ points, press 's' to save into config.yaml
 
-# 4d. Tam sistem
+# 4. Fine-tune laser/camera parallax and gain
+python3 calibrate_aim.py
+
+# 5. Run the full system
 python3 main.py
 ```
 
-## 5. Ayarlar
+All runtime behavior is configured in `turret/config.yaml`: servo limits and
+calibration, smoothing/deadzone parameters, state-machine timers, sound
+files and playback mode, and the detection backend.
 
-Her şey `turret/config.yaml` içinde: servo limitleri, kalibrasyon,
-yumuşatma (titreme), durum zamanlayıcıları (found/lost/reacquire),
-ses dosyaları, tespit backend (`yolo` veya hafif `mediapipe`).
+## Verification checklist
 
-## 6. Doğrulama kontrol listesi
+- Servo supply holds at least 4.8 V under load; no Pi brownouts.
+- `serial_test.py` moves all servos and returns to center after the failsafe timeout.
+- `main.py` boxes a person reliably at an acceptable frame rate.
+- After calibration, the laser lands close to the intended aim point on a person.
+- Entering/leaving the camera's field of view produces the correct state transitions and sounds.
+- Tracking motion is smooth (no visible jitter) while following a moving target.
 
-- [ ] Servo kaynağı yük altında ≥4.8V (multimetre), Pi brownout yok
-- [ ] `serial_test.py` ile servolar merkez + lazer; 500ms sonra failsafe merkez
-- [ ] `main.py` insanı kutuluyor, FPS ≥ 15
-- [ ] Kalibrasyon sonrası lazer bir kişiye ±birkaç cm isabet
-- [ ] Kişi gir/çık → ACQUIRED→TRACKING→LOST + doğru Portal sesleri
-- [ ] Gezerken takip yumuşak (titremesiz), lazer hedefte
+## Measuring performance
 
-## Notlar
+`turret/measure_results.py` is a bench script for collecting FPS, per-frame
+inference latency, and detection-to-command latency, either with or without
+the Arduino connected:
 
-- Eski Instructables/Windows kodu kullanılmadı (2013-2014, Pi'de çalışmaz).
-  Yalnızca mantığı (115200 baud, found/lost/reacquire zamanlayıcı) ve Portal
-  `.wav` sesleri modern mimaride yeniden yazıldı.
-- Pi'siz geliştirmede `vision.Camera` otomatik USB webcam'e (OpenCV) düşer.
+```bash
+python3 measure_results.py --seconds 60 --latency-trials 20
+python3 measure_results.py --seconds 30 --no-serial   # vision only
+```
+
+As of this writing, the numbers in `plans/results.md` are preliminary
+engineering estimates rather than measurements taken from a completed run;
+the script above and `plans/tools/plot_latency.py` are the tools intended to
+produce the real figures once a measurement pass is done on target hardware.
+
+## Project structure
+
+```
+turret/          Python application that runs on the Raspberry Pi
+  main.py           orchestrator / state machine
+  vision.py         camera capture + person detection
+  controller.py     pixel-to-angle conversion and smoothing
+  serial_link.py    serial communication with the Arduino
+  sound.py, audio_stream.py   audio playback
+  calibrate.py, calibrate_aim.py   calibration tools
+  measure_results.py   benchmarking tool
+  config.yaml       all runtime configuration
+  sounds/           audio clips (may be excluded from version control)
+
+arduino/
+  turret_firmware/  main firmware (servo control, failsafe, LEDs, laser)
+  led_test/         standalone LED test sketch
+
+plans/             planning and methodology notes used to write the report,
+                   covering architecture, vision, audio, control,
+                   communication, results, and the ONNX deployment approach
+
+ReportLatex/       IEEE-format LaTeX report and figures
+```
+
+## Notes
+
+- This project does not reuse the original 2013-2014 Instructables/Windows
+  turret code; only the general idea (serial protocol at 115200 baud,
+  found/lost/reacquire timing logic, Portal sound effects) carried over,
+  reimplemented from scratch for this architecture.
